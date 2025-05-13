@@ -1,0 +1,11 @@
+# filepath: e:\git-repos\lending-api\requirements.txt
+fastapi
+uvicorn
+httpx
+requests
+sqlalchemy
+psycopg2-binary
+python-dotenv
+pydantic
+pydantic-settings
+google-genai

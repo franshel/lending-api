@@ -1,0 +1,16 @@
+{
+	"servers": {
+		"dbhub": {
+			"type": "stdio",
+			"command": "npx",
+			"args": [
+				"-y",
+				"@bytebase/dbhub",
+				"--transport",
+				"stdio",
+				"--dsn",
+				"postgres://postgres:postgres@157.230.244.71:9999/postgres?sslmode=disable"
+			]
+		}
+	}
+}
