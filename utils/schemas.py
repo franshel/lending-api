@@ -34,8 +34,7 @@ class Transaction(BaseModel):
     status: str
     transaction_types: List[str]
     from_: AddressInfo = Field(..., alias="from")
-    # Made this optional for contract creation transactions
-    to: Optional[AddressInfo] = None
+    to: AddressInfo
     method: Optional[str]
     decoded_input: Optional[DecodedInput]
     value: str  # In Wei
@@ -46,8 +45,6 @@ class Transaction(BaseModel):
     exchange_rate: Optional[str]
     historic_exchange_rate: Optional[str]
     token_name: Optional[str] = None  # Added field for token name
-    # Added for contract creation
-    created_contract: Optional[AddressInfo] = None
 
 
 class ProcessedTransaction(BaseModel):

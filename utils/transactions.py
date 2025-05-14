@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 import requests
 from functools import lru_cache
 
-from schemas.schemas import ProcessedTransaction, Transaction
+from schemas.schemas import ProcessedTransaction, Transaction  # Adjusted import path
 
 # A dictionary to store the wallet address to generated alias mapping
 
@@ -69,12 +69,26 @@ def extract_transaction_info(tx: Transaction) -> ProcessedTransaction:
                 token_amount = int(param.value)
                 break
 
-    # Get token name from either transaction or lookup from address
-    token_name = tx.token_name or get_token_name(tx.to.hash)
+    # Handle contract creation transactions where 'to' is None
+    if tx.to is None:
+        # Check if we have created_contract info
+        to_address = tx.created_contract.hash if tx.created_contract else ""
+        to_is_contract = True  # New contracts are always contracts
+        to_is_verified = tx.created_contract.is_verified if tx.created_contract else False
+        to_alias = get_wallet_alias(
+            to_address, True) if to_address else "created-contract"
+        token_name = tx.token_name or get_token_name(
+            to_address) if to_address else None
+    else:
+        # Regular transaction with 'to' address
+        to_address = tx.to.hash
+        to_is_contract = tx.to.is_contract
+        to_is_verified = tx.to.is_verified or False
+        to_alias = get_wallet_alias(to_address, to_is_contract)
+        token_name = tx.token_name or get_token_name(to_address)
 
     # Get names for addresses (using alias system)
     from_alias = get_wallet_alias(tx.from_.hash, tx.from_.is_contract)
-    to_alias = get_wallet_alias(tx.to.hash, tx.to.is_contract)
 
     return ProcessedTransaction(
         tx_hash=tx.hash,
@@ -83,10 +97,10 @@ def extract_transaction_info(tx: Transaction) -> ProcessedTransaction:
         status=tx.status,
         tx_type=tx.transaction_types,
         from_address=tx.from_.hash,
-        to_address=tx.to.hash,
+        to_address=to_address,
         from_is_contract=tx.from_.is_contract,
-        to_is_contract=tx.to.is_contract,
-        to_is_verified=tx.to.is_verified or False,
+        to_is_contract=to_is_contract,
+        to_is_verified=to_is_verified,
         from_name=from_alias,
         to_name=to_alias,
         token_name=token_name,
@@ -104,6 +118,7 @@ def extract_transaction_info(tx: Transaction) -> ProcessedTransaction:
 
 
 def process_transactions(raw_data: dict) -> List[ProcessedTransaction]:
+    # print("TESTING", raw_data.get("items"))
     transactions = [Transaction(**tx) for tx in raw_data.get("items", [])]
     return [extract_transaction_info(tx) for tx in transactions]
 
@@ -142,6 +157,7 @@ def get_tx_data(wallet_address: str) -> List[ProcessedTransaction]:
             return []
 
         data = response.json()
+        # print(data)
         if "items" not in data:
             print(
                 f"Invalid response format: 'items' key not found for {wallet_address}")
@@ -160,3 +176,4 @@ def get_tx_data(wallet_address: str) -> List[ProcessedTransaction]:
     except Exception as e:
         print(f"Error processing transactions for {wallet_address}: {str(e)}")
         return []
+

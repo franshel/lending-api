@@ -1,3 +1,4 @@
+from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -15,6 +16,8 @@ from ai_gen_analysis import generate
 from utils.utils import json_serial, serialize_pydantic_model
 
 # Create a custom JSON encoder class
+
+load_dotenv()
 
 
 class CustomJSONResponse(JSONResponse):

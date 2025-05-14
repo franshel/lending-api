@@ -1,7 +1,7 @@
-from utils.holdings import format_token_holding, get_token_holdings_summary # type: ignore
-from utils.transactions import get_tx_data, tx_verbose_string # type: ignore
+from utils.holdings import format_token_holding, get_token_holdings_summary  # type: ignore
+from utils.transactions import get_tx_data, tx_verbose_string  # type: ignore
 from schemas.schemas import FraudRiskAnalysis, WalletMetadata, BehavioralPatterns, ContractUsage, ScoringBreakdown
-
+from dotenv import load_dotenv
 
 import base64
 import os
