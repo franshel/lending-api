@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 
@@ -120,3 +120,99 @@ class FraudRiskAnalysis(BaseModel):
     comments: Optional[List[str]] = []
     final_score: float = Field(..., ge=0, le=100)
     risk_level: str
+
+
+# Business Proposal Schemas
+
+class SocialMediaLinks(BaseModel):
+    twitter: Optional[str] = None
+    linkedin: Optional[str] = None
+    facebook: Optional[str] = None
+    discord: Optional[str] = None
+    telegram: Optional[str] = None
+    github: Optional[str] = None
+
+
+class DocumentBase(BaseModel):
+    title: str
+    type: str
+    url: str
+    size: str
+
+
+class DocumentCreate(DocumentBase):
+    uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DocumentResponse(DocumentBase):
+    id: str
+    proposal_id: str
+    uploaded_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+
+class BusinessProposalBase(BaseModel):
+    company_name: str
+    logo: Optional[str] = None
+    accepted_token: str
+    total_pooled: str
+    short_description: str
+    full_description: str
+    business_plan: str
+    expected_return: str
+    duration: str
+    minimum_investment: str
+    maximum_investment: str
+    # Made optional as it will come from auth token
+    proposer_wallet: Optional[str] = None
+    deadline: datetime
+    status: str = "active"
+    current_funding: str = "0"
+    target_funding: str
+    investor_count: int = 0
+    website: Optional[str] = None
+    social_media: Optional[SocialMediaLinks] = None
+    tags: List[str] = []
+
+
+class BusinessProposalCreate(BusinessProposalBase):
+    proposed_at: datetime = Field(default_factory=datetime.utcnow)
+    documents: List[DocumentCreate] = []
+
+
+class BusinessProposalUpdate(BaseModel):
+    company_name: Optional[str] = None
+    logo: Optional[str] = None
+    accepted_token: Optional[str] = None
+    total_pooled: Optional[str] = None
+    short_description: Optional[str] = None
+    full_description: Optional[str] = None
+    business_plan: Optional[str] = None
+    expected_return: Optional[str] = None
+    duration: Optional[str] = None
+    minimum_investment: Optional[str] = None
+    maximum_investment: Optional[str] = None
+    deadline: Optional[datetime] = None
+    status: Optional[str] = None
+    current_funding: Optional[str] = None
+    target_funding: Optional[str] = None
+    investor_count: Optional[int] = None
+    website: Optional[str] = None
+    social_media: Optional[SocialMediaLinks] = None
+    tags: Optional[List[str]] = None
+
+
+class BusinessProposalResponse(BusinessProposalBase):
+    id: str
+    proposed_at: datetime
+    documents: List[DocumentResponse]
+    wallet_analysis: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True

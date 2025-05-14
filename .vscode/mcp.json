@@ -1,16 +1,28 @@
 {
 	"servers": {
-		"dbhub": {
-			"type": "stdio",
-			"command": "npx",
+		// "dbhub": {
+		// 	"command": "npx",
+		// 	"args": [
+		// 		"-y",
+		// 		"@bytebase/dbhub",
+		// 		"--dsn",
+		// 		"postgres://postgres:postgres@157.230.244.71:9999/postgres?sslmode=disable"
+		// 	]
+		// },
+		"postgres": {
+			"command": "docker",
 			"args": [
-				"-y",
-				"@bytebase/dbhub",
-				"--transport",
-				"stdio",
-				"--dsn",
-				"postgres://postgres:postgres@157.230.244.71:9999/postgres?sslmode=disable"
-			]
+				"run",
+				"-i",
+				"--rm",
+				"-e",
+				"DATABASE_URI",
+				"crystaldba/postgres-mcp",
+				"--access-mode=unrestricted"
+			],
+			"env": {
+				"DATABASE_URI": "postgres://postgres:postgres@157.230.244.71:9999/postgres?sslmode=disable"
+			}
 		}
 	}
 }

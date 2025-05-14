@@ -9,3 +9,7 @@ python-dotenv
 pydantic
 pydantic-settings
 google-genai
+web3
+python-jose[cryptography]
+eth-account
+python-multipart
