@@ -1,16 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import uuid
 import logging
 
-from database.database import get_db, WalletAnalysis, BusinessProposal, ProposalDocument, Tag
+from database.database import get_db, WalletAnalysis, BusinessProposal, ProposalDocument, Tag, WalletProfile
 from schemas.schemas import (
     BusinessProposalCreate, BusinessProposalUpdate,
     BusinessProposalResponse, DocumentCreate
 )
 from utils.auth_utils import get_current_wallet
-from utils.wallet_utils import get_or_create_wallet_analysis
+from utils.wallet_utils import analyze_wallet_address, get_or_create_wallet_analysis
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -28,23 +29,45 @@ async def create_business_proposal(
     wallet_address: str = Depends(get_current_wallet)
 ):
     """
-    Create a new business proposal from an authenticated wallet
+    Create a new business proposal from an authenticated wallet.
+    Requires a completed profile before allowing proposal creation.
     """
-    try:        # Use authenticated wallet address from the token
-        proposer_wallet = wallet_address
+    try:        # Use authenticated wallet address from the token        proposer_wallet = wallet_address
 
-        # Auto-analyze the wallet when creating a proposal
-        wallet_analysis_result = await get_or_create_wallet_analysis(proposer_wallet, db)
-        if not wallet_analysis_result:
-            logger.warning(
-                f"Could not analyze wallet {proposer_wallet}, but will continue with proposal creation")
-        else:
+        # Check if user has a completed profile - using direct SQL to avoid ORM issues
+        profile_query = db.execute(
+            text(
+                f"SELECT wallet_address, profile_completed FROM wallet_profiles WHERE wallet_address = '{wallet_address}'")
+        ).fetchone()
+
+        # If no profile exists, throw an error
+        if not profile_query:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You must create a profile before creating a business proposal"
+            )
+
+        # If profile is not completed, throw an error
+        if not profile_query.profile_completed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You must complete your profile before creating a business proposal"
+            )        # Always do fresh wallet analysis when creating a proposal
+        try:
+            wallet_analysis_result = await analyze_wallet_address(wallet_address, db)
             logger.info(
-                f"Wallet {proposer_wallet} analyzed successfully with risk level: {wallet_analysis_result.get('risk_level', 'unknown')}")
+                f"Wallet {wallet_address} analyzed successfully with risk level: {wallet_analysis_result.get('risk_level', 'unknown')}")
+        except Exception as e:
+            logger.warning(
+                f"Could not analyze wallet {wallet_address}, but will continue with proposal creation: {str(e)}")
+            wallet_analysis_result = None  # Continue without analysis if it fails
 
-        # Get the wallet analysis from the database (after analysis)
-        wallet_analysis = db.query(WalletAnalysis).filter(
-            WalletAnalysis.wallet_address == proposer_wallet).first()
+        # Get the wallet analysis from the database (after analysis) - using direct SQL
+        wallet_analysis_query = db.execute(text(
+            f"SELECT id FROM wallet_analyses WHERE wallet_address = '{wallet_address}'")
+        ).fetchone()
+
+        wallet_analysis_id = wallet_analysis_query.id if wallet_analysis_query else None
 
         # Generate proposal ID
         proposal_id = f"prop-{uuid.uuid4().hex[:6]}"
@@ -55,13 +78,12 @@ async def create_business_proposal(
         proposal_data.pop("tags")  # Handle tags separately
 
         # Override the proposer_wallet field with the authenticated wallet address
-        proposal_data["proposer_wallet"] = proposer_wallet
-
         # Create the business proposal
+        proposal_data["proposer_wallet"] = wallet_address
         new_proposal = BusinessProposal(
             id=proposal_id,
             **proposal_data,
-            wallet_analysis_id=wallet_analysis.id if wallet_analysis else None
+            wallet_analysis_id=wallet_analysis_id
         )
         db.add(new_proposal)
 
@@ -93,6 +115,25 @@ async def create_business_proposal(
             f"Error creating business proposal: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Error creating business proposal: {str(e)}")
+
+
+@router.get("/me", response_model=dict)
+async def get_my_proposals(
+    db: Session = Depends(get_db),
+    wallet_address: str = Depends(get_current_wallet)
+):
+    """
+    Get all business proposals submitted by the authenticated wallet
+    """
+    proposals = db.query(BusinessProposal).filter(
+        BusinessProposal.proposer_wallet == wallet_address
+    ).all()
+
+    return {
+        "total": len(proposals),
+        "wallet_address": wallet_address,
+        "proposals": [proposal.to_dict() for proposal in proposals]
+    }
 
 
 @router.get("/{proposal_id}", response_model=BusinessProposalResponse)
@@ -298,29 +339,12 @@ async def delete_proposal_document(
 
 
 @router.get("/by-wallet/{wallet_address}")
-async def get_proposals_by_wallet(
-    wallet_address: str,
-    db: Session = Depends(get_db)
-):
-    """
-    Get all business proposals submitted by a specific wallet address
-    """
-    proposals = db.query(BusinessProposal).filter(
-        BusinessProposal.proposer_wallet == wallet_address
-    ).all()
-
-    return {
-        "total": len(proposals),
-        "wallet_address": wallet_address,
-        "proposals": [proposal.to_dict() for proposal in proposals]
-    }
-
-
 @router.get("/me", response_model=dict)
 async def get_my_proposals(
     db: Session = Depends(get_db),
     wallet_address: str = Depends(get_current_wallet)
 ):
+    print(wallet_address)
     """
     Get all business proposals submitted by the authenticated wallet
     """

@@ -13,6 +13,7 @@ from routes import router as api_router
 
 # Import database dependencies
 from database.database import SessionLocal, engine, Base
+import sys
 
 # Load environment variables
 load_dotenv()
@@ -24,6 +25,13 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
+# Enable print statements for development environment
+if os.getenv('ENVIRONMENT') != 'production':
+    logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
+else:
+    # Disable prints in production by redirecting stdout
+    sys.stdout = open(os.devnull, 'w')
 
 # Create FastAPI application
 app = FastAPI(

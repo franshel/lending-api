@@ -1,3 +1,4 @@
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
@@ -152,3 +153,47 @@ async def get_or_create_wallet_analysis(wallet_address: str, db: Session) -> Opt
             f"Error getting or creating wallet analysis for {wallet_address}: {str(e)}",
             exc_info=True)
         return None
+
+
+async def background_wallet_analysis(wallet_address: str, db: Session) -> None:
+    """
+    Dedicated function for running wallet analysis in the background.
+    This function properly handles errors and ensures the database session is used correctly.
+
+    Args:
+        wallet_address: Ethereum wallet address to analyze
+        db: Database session from the request scope
+    """
+    from database.database import SessionLocal
+
+    # Create a new database session specifically for this background task
+    # This is important because the request's session might be closed by the time this runs
+    background_db = SessionLocal()
+
+    logger.info(f"Starting background wallet analysis for {wallet_address}")
+    try:
+        # Check if wallet already has an analysis (double check in case it was created between scheduling and execution)
+        # Using direct SQL instead of ORM to avoid relationship issues
+        existing_query = background_db.execute(
+            text(
+                f"SELECT id FROM wallet_analyses WHERE wallet_address = '{wallet_address}'")).fetchone()
+
+        if existing_query:
+            logger.info(
+                f"Analysis for wallet {wallet_address} already exists, skipping background analysis")
+            return
+
+        # Perform the wallet analysis
+        result = await analyze_wallet_address(wallet_address, background_db)
+        logger.info(
+            f"Successfully completed background wallet analysis for {wallet_address}. Score: {result.get('final_score', 'N/A')}")
+
+    except Exception as e:
+        # Log but don't raise - this is a background task
+        logger.error(
+            f"Error in background wallet analysis for {wallet_address}: {str(e)}", exc_info=True)
+    finally:
+        # Always close the background database session when done
+        background_db.close()
+        logger.info(
+            f"Background database session closed for wallet analysis of {wallet_address}")

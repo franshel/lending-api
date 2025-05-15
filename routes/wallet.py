@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime
@@ -26,12 +27,42 @@ async def get_wallet_analysis(wallet_address: str, db: Session = Depends(get_db)
     """
     Get analysis results for a specific wallet address
     """
-    wallet = db.query(WalletAnalysis).filter(
-        WalletAnalysis.wallet_address == wallet_address).first()
-    if not wallet:
+    try:
+        # Use direct SQL to avoid ORM relationship issues
+        wallet_query = db.execute(
+            text(
+                f"SELECT * FROM wallet_analyses WHERE wallet_address = '{wallet_address}'")
+        ).fetchone()
+
+        if not wallet_query:
+            raise HTTPException(
+                status_code=404, detail="Wallet analysis not found")
+
+        # Convert to dictionary
+        wallet_data = {
+            "id": wallet_query.id,
+            "wallet_address": wallet_query.wallet_address,
+            "network": wallet_query.network,
+            "analysis_timestamp": wallet_query.analysis_timestamp.isoformat() if wallet_query.analysis_timestamp else None,
+            "final_score": wallet_query.final_score,
+            "risk_level": wallet_query.risk_level,
+            "wallet_metadata": wallet_query.wallet_metadata,
+            "scoring_breakdown": wallet_query.scoring_breakdown,
+            "behavioral_patterns": wallet_query.behavioral_patterns,
+            "transactions": wallet_query.transactions,
+            "token_holdings": wallet_query.token_holdings,
+            "comments": wallet_query.comments,
+            "created_at": wallet_query.created_at.isoformat() if wallet_query.created_at else None,
+            "updated_at": wallet_query.updated_at.isoformat() if wallet_query.updated_at else None
+        }
+
+        return wallet_data
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=404, detail="Wallet analysis not found")
-    return wallet.to_dict()
+            status_code=500, detail=f"Error fetching wallet analysis: {str(e)}"
+        )
 
 
 @router.get("/")

@@ -1,6 +1,6 @@
 import os
 import json
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, ForeignKey, Table
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, ForeignKey, Table, Boolean
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -196,6 +196,81 @@ class Tag(Base):
         return {
             "name": self.name,
             "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class WalletProfile(Base):
+    """SQLAlchemy model for user profiles linked to wallets"""
+    __tablename__ = "wallet_profiles"
+
+    # Wallet address is the primary key
+    wallet_address = Column(String(42), primary_key=True, index=True)
+
+    # Basic profile information
+    display_name = Column(String(100), nullable=True)
+    email = Column(String(255), nullable=True)
+    bio = Column(Text, nullable=True)
+    avatar_url = Column(String(255), nullable=True)
+    profile_completed = Column(Boolean, default=False, nullable=False)
+
+    # Contact information
+    phone = Column(String(20), nullable=True)
+    website = Column(String(255), nullable=True)
+    social_media = Column(JSONB, nullable=True)
+
+    # Business information (for proposal creators)
+    company_name = Column(String(100), nullable=True)
+    company_position = Column(String(100), nullable=True)
+    company_website = Column(String(255), nullable=True)
+    company_description = Column(Text, nullable=True)
+
+    # Verification status
+    email_verified = Column(Boolean, default=False, nullable=False)
+    kyc_verified = Column(Boolean, default=False, nullable=False)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
+    # Foreign relationships
+    # Add relationship to wallet analysis using foreign() annotation
+    wallet_analysis = relationship(
+        "WalletAnalysis",
+        primaryjoin="foreign(WalletProfile.wallet_address) == remote(WalletAnalysis.wallet_address)",
+        backref="profile",
+        uselist=False,
+        viewonly=True  # Make it read-only to prevent cascading issues
+    )
+
+    # Add relationship to business proposals using foreign() annotation
+    proposals = relationship(
+        "BusinessProposal",
+        primaryjoin="foreign(WalletProfile.wallet_address) == remote(BusinessProposal.proposer_wallet)",
+        backref="profile",
+        uselist=True,
+        viewonly=True  # Make it read-only to prevent cascading issues
+    )
+
+    def to_dict(self):
+        """Convert model to dictionary"""
+        return {
+            "wallet_address": self.wallet_address,
+            "display_name": self.display_name,
+            "email": self.email,
+            "bio": self.bio,
+            "avatar_url": self.avatar_url,
+            "profile_completed": self.profile_completed,
+            "phone": self.phone,
+            "website": self.website,
+            "social_media": self.social_media,
+            "company_name": self.company_name,
+            "company_position": self.company_position,
+            "company_website": self.company_website,
+            "company_description": self.company_description,
+            "email_verified": self.email_verified,
+            "kyc_verified": self.kyc_verified,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }
 
 

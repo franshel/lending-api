@@ -216,3 +216,43 @@ class BusinessProposalResponse(BusinessProposalBase):
 
     class Config:
         orm_mode = True
+
+
+# Wallet Profile Schemas
+
+class WalletProfileBase(BaseModel):
+    """Base schema for wallet profile"""
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    bio: Optional[str] = None
+    avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    social_media: Optional[Dict[str, str]] = None
+    company_name: Optional[str] = None
+    company_position: Optional[str] = None
+    company_website: Optional[str] = None
+    company_description: Optional[str] = None
+
+
+class WalletProfileCreate(WalletProfileBase):
+    """Schema for creating a wallet profile"""
+    pass
+
+
+class WalletProfileUpdate(WalletProfileBase):
+    """Schema for updating a wallet profile"""
+    pass
+
+
+class WalletProfileResponse(WalletProfileBase):
+    """Schema for returning a wallet profile"""
+    wallet_address: str
+    profile_completed: bool
+    email_verified: bool
+    kyc_verified: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
