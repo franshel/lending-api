@@ -7,6 +7,8 @@ import httpx
 EXCHANGE_API_URL = "https://open.er-api.com/v6/latest/USD"
 
 # @app.get("/usd-to-idr")
+
+
 async def get_usd_to_idr():
     async with httpx.AsyncClient() as client:
         try:
@@ -18,7 +20,7 @@ async def get_usd_to_idr():
                 raise Exception("IDR rate not found in response")
             # Convert IDR to USD (1/rate) and scale by 1e8 to avoid decimals
             idrtousd = int(1e8 * (1 / rate)) if rate else None
-            
+            print(idrtousd)
             return {"rate": idrtousd, "source": "open.er-api.com"}
         except httpx.RequestError:
             raise Exception("IDR rate not found in response")

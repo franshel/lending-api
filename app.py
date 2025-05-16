@@ -1,15 +1,18 @@
 # filepath: e:\git-repos\lending-api\app.py
 import os
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import logging
 import time
+import asyncio
 
 # Import routers from routes package
 from routes import router as api_router
+from utils.pricefeed_task import start_periodic_updates, schedule_price_updates
+from utils.liquidate_task import start_periodic_liquidations, schedule_liquidation
 
 # Import database dependencies
 from database.database import SessionLocal, engine, Base
@@ -102,16 +105,24 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": "An unexpected error occurred. Please try again later."},
     )
 
+# Store background tasks for cleanup
+price_update_task = None
+liquidation_task = None
+
 # Startup event
 
 
 @app.on_event("startup")
 async def startup_event():
     logger.info("Starting up the application")
-    # You can add initialization tasks here, like:
-    # 1. Creating database tables if they don't exist
-    # 2. Checking database connection
-    # 3. Initializing background tasks
+    # Create database tables
+    Base.metadata.create_all(bind=engine)
+
+    # Start periodic tasks
+    global price_update_task, liquidation_task
+    price_update_task = asyncio.create_task(start_periodic_updates(14400))
+    liquidation_task = asyncio.create_task(start_periodic_liquidations(14400))
+    logger.info("Started periodic price updates and liquidation tasks")
 
 # Shutdown event
 
@@ -119,4 +130,24 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("Shutting down the application")
-    # You can add cleanup tasks here
+    # Cancel the background tasks when shutting down
+    for task in [price_update_task, liquidation_task]:
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+    logger.info("Stopped all periodic tasks")
+
+
+@app.post("/trigger-price-update/")
+async def trigger_price_update(background_tasks: BackgroundTasks):
+    """Manually trigger a price update"""
+    return schedule_price_updates(background_tasks)
+
+
+@app.post("/trigger-liquidation/")
+async def trigger_liquidation(background_tasks: BackgroundTasks):
+    """Manually trigger a liquidation check"""
+    return schedule_liquidation(background_tasks)
