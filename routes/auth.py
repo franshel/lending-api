@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends, status, BackgroundTasks
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, validator, ValidationError
 from typing import Dict, Any, Optional
-import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+import logging
+
 from database.database import get_db, WalletAnalysis, WalletProfile
 from utils.wallet_utils import get_or_create_wallet_analysis
 from utils.auth_utils import (
@@ -39,7 +41,7 @@ class NonceRequest(BaseModel):
         """Validate wallet address format"""
         v = v.lower()
         if not v.startswith('0x') or len(v) != 42:
-            raise ValueError('Invalid Ethereum wallet address format')
+            raise ValueError("Invalid wallet address format")
         return v
 
 
@@ -88,6 +90,12 @@ async def request_auth_message(request: NonceRequest) -> Dict[str, Any]:
             "message": message,
             "wallet_address": wallet_address
         }
+    except ValidationError as ve:
+        logger.error(f"Validation error: {str(ve)}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(ve)
+        )
     except Exception as e:
         logger.error(f"Error generating authentication message: {str(e)}")
         raise HTTPException(
@@ -133,60 +141,39 @@ async def verify_wallet_signature(
                 detail="Invalid signature"
             )
 
-        # Check if this wallet has been analyzed before - use direct SQL to avoid ORM issues
-        existing_analysis_query = db.execute(
-            text("SELECT id FROM wallet_analyses WHERE wallet_address = :address"),
-            {"address": wallet_address}).fetchone()
-        existing_analysis = existing_analysis_query is not None
+        # Check if this wallet has been analyzed before
+        try:
+            existing_analysis_query = db.execute(
+                text("SELECT id FROM wallet_analyses WHERE wallet_address = :address"),
+                {"address": wallet_address}).fetchone()
+            existing_analysis = existing_analysis_query is not None
+        except SQLAlchemyError as e:
+            logger.error(f"Database error checking wallet analysis: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Error checking wallet analysis status"
+            )
 
         # Default flags
         background_analysis_initiated = False
         profile_created = False
 
-        # If first time authentication, schedule a background analysis
+        # If first time authentication, schedule background analysis
         if not existing_analysis:
-            try:
-                logger.info(
-                    f"First-time authentication for {wallet_address}. Scheduling background wallet analysis.")
-                background_tasks.add_task(
-                    background_wallet_analysis, wallet_address, db)
-                logger.info(
-                    f"Background wallet analysis scheduled for {wallet_address}")
-                background_analysis_initiated = True
-                # Also check if a profile exists, and if not, create a minimal one
-                try:
-                    # Use a direct SQL query to check if the wallet profile exists
-                    # Use parameterized queries to avoid SQL injection
-                    existing_profile = db.execute(
-                        text(
-                            "SELECT wallet_address FROM wallet_profiles WHERE wallet_address = :address"),
-                        {"address": wallet_address}
-                    ).fetchone()
+            background_tasks.add_task(
+                background_wallet_analysis, wallet_address, db)
+            background_analysis_initiated = True
 
-                    if not existing_profile:
-                        # Create a minimal profile for the wallet with direct SQL
-                        # Use parameterized query to avoid SQL injection
-                        db.execute(
-                            text("INSERT INTO wallet_profiles (wallet_address, profile_completed, email_verified, kyc_verified, created_at, updated_at) VALUES (:address, false, false, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"),
-                            {"address": wallet_address}
-                        )
-                        db.commit()
-                        logger.info(
-                            f"Created initial profile for {wallet_address} using direct SQL")
-                        profile_created = True
-                except Exception as profile_error:
-                    # Log but don't fail authentication if profile creation fails
-                    logger.error(
-                        f"Error creating profile for {wallet_address}: {str(profile_error)}")
-                    db.rollback()
+        # Generate access token
+        try:
+            access_token = create_access_token(wallet_address)
+        except Exception as e:
+            logger.error(f"Error creating access token: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error creating access token"
+            )
 
-            except Exception as e:
-                # Log the error but don't fail the authentication
-                logger.error(
-                    f"Error scheduling background analysis for {wallet_address}: {str(e)}")
-                # Authentication should still succeed even if background task scheduling fails        # Generate JWT token
-        # Include information about background analysis and profile creation in response
-        access_token = create_access_token(wallet_address)
         return {
             "access_token": access_token,
             "token_type": "bearer",
@@ -195,6 +182,14 @@ async def verify_wallet_signature(
             "profile_created": profile_created
         }
 
+    except HTTPException as he:
+        raise he
+    except ValidationError as ve:
+        logger.error(f"Validation error: {str(ve)}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(ve)
+        )
     except Exception as e:
         logger.error(f"Error verifying wallet signature: {str(e)}")
         raise HTTPException(
@@ -210,64 +205,76 @@ async def get_current_user_info(
 ) -> Dict[str, Any]:
     """
     Get information about the currently authenticated wallet including profile status
-
-    Args:
-        wallet_address: The authenticated wallet address (from the token)
-        db: Database session
-
-    Returns:
-        Information about the authenticated wallet including profile status
     """
-    # Check if user has a profile - using direct SQL to avoid ORM relationship issues
     try:
+        # Check if user has a profile
         profile_query = db.execute(
-            text(
-                f"SELECT wallet_address, profile_completed, display_name, email, company_name FROM wallet_profiles WHERE wallet_address = '{wallet_address}'")
+            text("""
+                SELECT wallet_address, profile_completed, display_name, 
+                       email, company_name 
+                FROM wallet_profiles 
+                WHERE wallet_address = :address
+            """),
+            {"address": wallet_address}
         ).fetchone()
 
         has_profile = profile_query is not None
 
         # If profile doesn't exist, create one
         if not has_profile:
-            logger.info(
-                f"Creating profile for wallet {wallet_address} during /me endpoint call")
-            db.execute(
-                text(
-                    f"INSERT INTO wallet_profiles (wallet_address, profile_completed, email_verified, kyc_verified) VALUES ('{wallet_address}', false, false, false)")
-            )
-            db.commit()
+            try:
+                db.execute(
+                    text("""
+                        INSERT INTO wallet_profiles (wallet_address, profile_completed)
+                        VALUES (:address, false)
+                    """),
+                    {"address": wallet_address}
+                )
+                db.commit()
 
-            # Fetch the newly created profile
-            profile_query = db.execute(
-                text(
-                    f"SELECT wallet_address, profile_completed, display_name, email, company_name FROM wallet_profiles WHERE wallet_address = '{wallet_address}'")
-            ).fetchone()
-            has_profile = True
+                # Fetch the newly created profile
+                profile_query = db.execute(
+                    text("""
+                        SELECT wallet_address, profile_completed, display_name, 
+                               email, company_name 
+                        FROM wallet_profiles 
+                        WHERE wallet_address = :address
+                    """),
+                    {"address": wallet_address}
+                ).fetchone()
+                has_profile = True
+            except SQLAlchemyError as e:
+                logger.error(f"Error creating profile: {str(e)}")
+                db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Error creating wallet profile"
+                )
 
-        profile_completed = profile_query.profile_completed if has_profile else False
-
-        # Prepare the response
+        # Prepare the response with safe access to attributes
         response = {
             "wallet_address": wallet_address,
             "is_authenticated": True,
             "has_profile": has_profile,
-            "profile_completed": profile_completed,
-            "display_name": profile_query.display_name if has_profile else None,
-            "email": profile_query.email if has_profile else None,
-            "company_name": profile_query.company_name if has_profile else None
+            "profile_completed": profile_query.profile_completed if profile_query else False,
+            "display_name": profile_query.display_name if profile_query else None,
+            "email": profile_query.email if profile_query else None,
+            "company_name": profile_query.company_name if profile_query else None
         }
 
         return response
+    except HTTPException as he:
+        raise he
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in get_current_user_info: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Error accessing user profile data"
+        )
     except Exception as e:
         logger.error(
             f"Error in get_current_user_info for {wallet_address}: {str(e)}")
-        # Return basic info if there's an error
-        return {
-            "wallet_address": wallet_address,
-            "is_authenticated": True,
-            "has_profile": False,
-            "profile_completed": False,
-            "display_name": None,
-            "email": None,
-            "company_name": None
-        }
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while retrieving user info"
+        )

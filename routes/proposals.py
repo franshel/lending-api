@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
+from pydantic import ValidationError
 from typing import List, Optional
 import uuid
 import logging
@@ -31,28 +33,41 @@ async def create_business_proposal(
     """
     Create a new business proposal from an authenticated wallet.
     Requires a completed profile before allowing proposal creation.
+    Only one active proposal per wallet is allowed.
     """
-    try:        # Use authenticated wallet address from the token        proposer_wallet = wallet_address
+    try:
+        # Check if wallet already has an active proposal
+        existing_proposal = db.query(BusinessProposal).filter(
+            BusinessProposal.proposer_wallet == wallet_address
+        ).first()
+
+        if existing_proposal:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You already have an active proposal. Only one proposal per wallet is allowed."
+            )
 
         # Check if user has a completed profile - using direct SQL to avoid ORM issues
         profile_query = db.execute(
             text(
-                f"SELECT wallet_address, profile_completed FROM wallet_profiles WHERE wallet_address = '{wallet_address}'")
+                "SELECT wallet_address, profile_completed FROM wallet_profiles WHERE wallet_address = :address"
+            ),
+            {"address": wallet_address}
         ).fetchone()
 
-        # If no profile exists, throw an error
         if not profile_query:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="You must create a profile before creating a business proposal"
             )
 
-        # If profile is not completed, throw an error
         if not profile_query.profile_completed:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="You must complete your profile before creating a business proposal"
-            )        # Always do fresh wallet analysis when creating a proposal
+            )
+
+        # Always do fresh wallet analysis when creating a proposal
         try:
             wallet_analysis_result = await analyze_wallet_address(wallet_address, db)
             logger.info(
@@ -60,11 +75,12 @@ async def create_business_proposal(
         except Exception as e:
             logger.warning(
                 f"Could not analyze wallet {wallet_address}, but will continue with proposal creation: {str(e)}")
-            wallet_analysis_result = None  # Continue without analysis if it fails
+            wallet_analysis_result = None
 
         # Get the wallet analysis from the database (after analysis) - using direct SQL
-        wallet_analysis_query = db.execute(text(
-            f"SELECT id FROM wallet_analyses WHERE wallet_address = '{wallet_address}'")
+        wallet_analysis_query = db.execute(
+            text("SELECT id FROM wallet_analyses WHERE wallet_address = :address"),
+            {"address": wallet_address}
         ).fetchone()
 
         wallet_analysis_id = wallet_analysis_query.id if wallet_analysis_query else None
@@ -73,48 +89,105 @@ async def create_business_proposal(
         proposal_id = f"prop-{uuid.uuid4().hex[:6]}"
 
         # Prepare data for business proposal
-        proposal_data = proposal.dict()
-        proposal_data.pop("documents")  # Handle documents separately
-        proposal_data.pop("tags")  # Handle tags separately
+        try:
+            proposal_data = proposal.model_dump()
+            proposal_data.pop("documents")  # Handle documents separately
+            proposal_data.pop("tags")  # Handle tags separately
+        except ValidationError as ve:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(ve)
+            )
 
-        # Override the proposer_wallet field with the authenticated wallet address
         # Create the business proposal
         proposal_data["proposer_wallet"] = wallet_address
-        new_proposal = BusinessProposal(
-            id=proposal_id,
-            **proposal_data,
-            wallet_analysis_id=wallet_analysis_id
-        )
-        db.add(new_proposal)
-
-        # Add documents
-        for doc in proposal.documents:
-            doc_id = f"doc-{uuid.uuid4().hex[:6]}"
-            document = ProposalDocument(
-                id=doc_id,
-                proposal_id=proposal_id,
-                **doc.dict()
+        try:
+            new_proposal = BusinessProposal(
+                id=proposal_id,
+                **proposal_data,
+                wallet_analysis_id=wallet_analysis_id
             )
-            db.add(document)
+            db.add(new_proposal)
 
-        # Add tags
-        for tag_name in proposal.tags:            # Check if tag exists
-            tag = db.query(Tag).filter(Tag.name == tag_name).first()
-            if not tag:
-                tag = Tag(name=tag_name)
-                db.add(tag)
+            # Add documents
+            for doc in proposal.documents:
+                doc_id = f"doc-{uuid.uuid4().hex[:6]}"
+                document = ProposalDocument(
+                    id=doc_id,
+                    proposal_id=proposal_id,
+                    **doc.model_dump()
+                )
+                db.add(document)
 
-            new_proposal.tags.append(tag)
+            # Add tags
+            for tag_name in proposal.tags:
+                tag = db.query(Tag).filter(Tag.name == tag_name).first()
+                if not tag:
+                    tag = Tag(name=tag_name)
+                    db.add(tag)
+                new_proposal.tags.append(tag)
 
-        db.commit()
-        db.refresh(new_proposal)
-        return new_proposal.to_dict()
+            db.commit()
+            db.refresh(new_proposal)
+            return new_proposal.to_dict()
+
+        except SQLAlchemyError as e:
+            db.rollback()
+            logger.error(
+                f"Database error creating business proposal: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Database error while creating business proposal"
+            )
+        except ValidationError as ve:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(ve)
+            )
+    except HTTPException as he:
+        # Re-raise HTTP exceptions with their original status codes
+        raise he
     except Exception as e:
-        db.rollback()
+        # For unknown errors, log them but return a generic message
         logger.error(
-            f"Error creating business proposal: {str(e)}", exc_info=True)
+            f"Unexpected error creating business proposal: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Error creating business proposal: {str(e)}")
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while creating the business proposal"
+        )
+
+
+@router.get("/by-wallet/{wallet_address}")
+async def get_wallet_proposals(
+    wallet_address: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all business proposals submitted by a specific wallet address
+    """
+    try:
+        proposals = db.query(BusinessProposal).filter(
+            BusinessProposal.proposer_wallet == wallet_address
+        ).all()
+
+        return {
+            "total": len(proposals),
+            "wallet_address": wallet_address,
+            "proposals": [proposal.to_dict() for proposal in proposals]
+        }
+    except SQLAlchemyError as e:
+        logger.error(f"Database error fetching proposals: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Error retrieving proposals from database"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error fetching proposals: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while retrieving proposals"
+        )
 
 
 @router.get("/me", response_model=dict)
@@ -125,15 +198,28 @@ async def get_my_proposals(
     """
     Get all business proposals submitted by the authenticated wallet
     """
-    proposals = db.query(BusinessProposal).filter(
-        BusinessProposal.proposer_wallet == wallet_address
-    ).all()
+    try:
+        proposals = db.query(BusinessProposal).filter(
+            BusinessProposal.proposer_wallet == wallet_address
+        ).all()
 
-    return {
-        "total": len(proposals),
-        "wallet_address": wallet_address,
-        "proposals": [proposal.to_dict() for proposal in proposals]
-    }
+        return {
+            "total": len(proposals),
+            "wallet_address": wallet_address,
+            "proposals": [proposal.to_dict() for proposal in proposals]
+        }
+    except SQLAlchemyError as e:
+        logger.error(f"Database error fetching proposals: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Error retrieving proposals from database"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error fetching proposals: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while retrieving proposals"
+        )
 
 
 @router.get("/{proposal_id}", response_model=BusinessProposalResponse)
@@ -141,13 +227,31 @@ async def get_business_proposal(proposal_id: str, db: Session = Depends(get_db))
     """
     Get a specific business proposal by ID
     """
-    proposal = db.query(BusinessProposal).filter(
-        BusinessProposal.id == proposal_id).first()
-    if not proposal:
-        raise HTTPException(
-            status_code=404, detail="Business proposal not found")
+    try:
+        proposal = db.query(BusinessProposal).filter(
+            BusinessProposal.id == proposal_id).first()
 
-    return proposal.to_dict()
+        if not proposal:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Business proposal with id {proposal_id} not found"
+            )
+
+        return proposal.to_dict()
+    except HTTPException as he:
+        raise he
+    except SQLAlchemyError as e:
+        logger.error(f"Database error fetching proposal: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Error retrieving proposal from database"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error fetching proposal: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while retrieving the proposal"
+        )
 
 
 @router.get("/", response_model=dict)
@@ -336,24 +440,3 @@ async def delete_proposal_document(
     db.commit()
 
     return {"message": f"Document {document_id} has been deleted from proposal {proposal_id}"}
-
-
-@router.get("/by-wallet/{wallet_address}")
-@router.get("/me", response_model=dict)
-async def get_my_proposals(
-    db: Session = Depends(get_db),
-    wallet_address: str = Depends(get_current_wallet)
-):
-    print(wallet_address)
-    """
-    Get all business proposals submitted by the authenticated wallet
-    """
-    proposals = db.query(BusinessProposal).filter(
-        BusinessProposal.proposer_wallet == wallet_address
-    ).all()
-
-    return {
-        "total": len(proposals),
-        "wallet_address": wallet_address,
-        "proposals": [proposal.to_dict() for proposal in proposals]
-    }

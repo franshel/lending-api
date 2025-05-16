@@ -48,7 +48,8 @@ class Web3WalletSimulator:
         """
         message_encoded = encode_defunct(text=message)
         signed_message = w3.eth.account.sign_message(
-            message_encoded, private_key=self.private_key)
+            message_encoded, private_key=self.private_key
+        )
         return signed_message.signature.hex()
 
     def authenticate(self) -> bool:
@@ -88,7 +89,6 @@ class Web3WalletSimulator:
             auth_data = response.json()
             self.auth_token = auth_data["access_token"]
             print(f"✓ Authentication successful! Token received.")
-
             return True
 
         except Exception as e:
@@ -106,7 +106,6 @@ class Web3WalletSimulator:
         """
         if not self.auth_token:
             raise ValueError("Not authenticated. Call authenticate() first.")
-
         return {"Authorization": f"Bearer {self.auth_token}"}
 
     def create_business_proposal(self) -> dict:
@@ -117,7 +116,6 @@ class Web3WalletSimulator:
             Created proposal data or None if failed
         """
         try:
-            # Create a sample proposal
             proposal_data = {
                 "company_name": f"Test Company {int(time.time())}",
                 "accepted_token": "ETH",
@@ -147,7 +145,6 @@ class Web3WalletSimulator:
                 ]
             }
 
-            # Send the proposal to the API
             response = requests.post(
                 f"{API_BASE_URL}/proposals/",
                 json=proposal_data,
@@ -156,8 +153,7 @@ class Web3WalletSimulator:
             response.raise_for_status()
 
             proposal = response.json()
-            print(
-                f"✓ Proposal created successfully with ID: {proposal.get('id')}")
+            print(f"✓ Proposal created successfully with ID: {proposal.get('id')}")
             return proposal
 
         except Exception as e:
@@ -205,8 +201,7 @@ class Web3WalletSimulator:
             response.raise_for_status()
 
             analysis = response.json()
-            print(
-                f"✓ Wallet analysis found with risk level: {analysis.get('risk_level')}")
+            print(f"✓ Wallet analysis found with risk level: {analysis.get('risk_level')}")
             return analysis
 
         except Exception as e:
@@ -256,10 +251,8 @@ def save_wallet_info(wallet: Web3WalletSimulator, filename="test_wallet.json"):
         "address": wallet.address,
         "private_key": wallet.private_key
     }
-
     with open(filename, "w") as f:
         json.dump(wallet_info, f, indent=2)
-
     print(f"Wallet information saved to {filename}")
 
 
@@ -274,7 +267,6 @@ def load_wallet_info(filename="test_wallet.json") -> dict:
 
 def run_tests():
     """Run the full test flow"""
-    # Check if we have saved wallet info
     wallet_info = load_wallet_info()
 
     if wallet_info:
@@ -287,39 +279,48 @@ def run_tests():
 
     print(f"\n=== Test Wallet ===")
     print(f"Address: {wallet.address}")
-    print(
-        f"Private Key: {wallet.private_key[:10]}...{wallet.private_key[-5:]}")
+    print(f"Private Key: {wallet.private_key[:10]}...{wallet.private_key[-5:]}")
 
     print("\n=== Testing Authentication Flow ===")
-    if wallet.authenticate():
-        print("\n=== Testing Proposal Creation (Expected to Fail) ===")
-        proposal = wallet.create_business_proposal()
-        if proposal:
-            print("× Proposal creation should have failed without a complete profile")
-        else:
-            print("✓ Proposal creation failed as expected due to incomplete profile")
+    if not wallet.authenticate():
+        return
 
-        print("\n=== Testing Profile Update ===")
-        profile = wallet.update_wallet_profile()
-        if profile:
-            print("✓ Profile updated successfully")
+    print("\n=== Testing Proposal Creation (Expected to Fail) ===")
+    proposal = wallet.create_business_proposal()
+    if proposal:
+        print("× Proposal creation should have failed without a complete profile")
+    else:
+        print("✓ Proposal creation failed as expected due to incomplete profile")
 
-            print("\n=== Testing Proposal Creation (Should Succeed) ===")
-            proposal = wallet.create_business_proposal()
+    print("\n=== Testing Profile Update ===")
+    profile = wallet.update_wallet_profile()
+    if not profile:
+        return
 
-            if proposal:
-                print("\n=== Testing Proposal Retrieval ===")
-                time.sleep(2)  # Give the server a moment to process
-                proposals = wallet.get_my_proposals()
+    print("\n=== Testing Proposal Creation (Should Succeed) ===")
+    proposal = wallet.create_business_proposal()
+    if not proposal:
+        print("× Failed to create the first proposal")
+        return
 
-                print("\n=== Testing Wallet Analysis ===")
-                time.sleep(2)  # Give the server a moment to process
-                analysis = wallet.verify_wallet_analysis()
+    print("\n=== Testing Single-Proposal Constraint ===")
+    second_proposal = wallet.create_business_proposal()
+    if not second_proposal:
+        print("✓ Only one proposal allowed per wallet user")
+    else:
+        print("× Constraint violated: second proposal was created")
 
-                if analysis:
-                    print(f"\n=== Wallet Analysis Summary ===")
-                    print(f"Risk Level: {analysis.get('risk_level')}")
-                    print(f"Score: {analysis.get('final_score')}")
+    print("\n=== Testing Proposal Retrieval ===")
+    time.sleep(2)  # Give the server a moment to process
+    proposals = wallet.get_my_proposals()
+
+    print("\n=== Testing Wallet Analysis ===")
+    time.sleep(2)
+    analysis = wallet.verify_wallet_analysis()
+    if analysis:
+        print(f"\n=== Wallet Analysis Summary ===")
+        print(f"Risk Level: {analysis.get('risk_level')}")
+        print(f"Score: {analysis.get('final_score')}")
 
     print("\n=== Test Complete ===")
 

@@ -1,11 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 from typing import Optional
 from datetime import datetime
+import logging
 
 from database.database import get_db, WalletAnalysis
 from utils.wallet_utils import analyze_wallet_address
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/wallets",
@@ -19,7 +24,25 @@ async def analyze_wallet(wallet_address: str, db: Session = Depends(get_db)):
     Analyze a wallet address and store the results in the database.
     If the wallet has been analyzed before, the analysis will be updated.
     """
-    return await analyze_wallet_address(wallet_address, db)
+    try:
+        return await analyze_wallet_address(wallet_address, db)
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve)
+        )
+    except SQLAlchemyError as e:
+        logger.error(f"Database error during wallet analysis: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Error storing wallet analysis results"
+        )
+    except Exception as e:
+        logger.error(f"Error analyzing wallet {wallet_address}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred during wallet analysis"
+        )
 
 
 @router.get("/{wallet_address}")
@@ -30,38 +53,32 @@ async def get_wallet_analysis(wallet_address: str, db: Session = Depends(get_db)
     try:
         # Use direct SQL to avoid ORM relationship issues
         wallet_query = db.execute(
-            text(
-                f"SELECT * FROM wallet_analyses WHERE wallet_address = '{wallet_address}'")
+            text("SELECT * FROM wallet_analyses WHERE wallet_address = :address"),
+            {"address": wallet_address}
         ).fetchone()
 
         if not wallet_query:
             raise HTTPException(
-                status_code=404, detail="Wallet analysis not found")
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Wallet analysis not found"
+            )
 
-        # Convert to dictionary
-        wallet_data = {
-            "id": wallet_query.id,
-            "wallet_address": wallet_query.wallet_address,
-            "network": wallet_query.network,
-            "analysis_timestamp": wallet_query.analysis_timestamp.isoformat() if wallet_query.analysis_timestamp else None,
-            "final_score": wallet_query.final_score,
-            "risk_level": wallet_query.risk_level,
-            "wallet_metadata": wallet_query.wallet_metadata,
-            "scoring_breakdown": wallet_query.scoring_breakdown,
-            "behavioral_patterns": wallet_query.behavioral_patterns,
-            "transactions": wallet_query.transactions,
-            "token_holdings": wallet_query.token_holdings,
-            "comments": wallet_query.comments,
-            "created_at": wallet_query.created_at.isoformat() if wallet_query.created_at else None,
-            "updated_at": wallet_query.updated_at.isoformat() if wallet_query.updated_at else None
-        }
+        # Convert to dictionary safely
+        return dict(wallet_query)
 
-        return wallet_data
-    except HTTPException:
-        raise
-    except Exception as e:
+    except HTTPException as he:
+        raise he
+    except SQLAlchemyError as e:
+        logger.error(f"Database error fetching wallet analysis: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching wallet analysis: {str(e)}"
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Error retrieving wallet analysis from database"
+        )
+    except Exception as e:
+        logger.error(f"Error fetching wallet analysis: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while retrieving the wallet analysis"
         )
 
 
@@ -77,24 +94,50 @@ async def get_all_wallets(
     """
     Get all analyzed wallets with optional filtering
     """
-    query = db.query(WalletAnalysis)
+    try:
+        base_query = "SELECT * FROM wallet_analyses WHERE 1=1"
+        params = {}
 
-    # Apply filters if provided
-    if risk_level:
-        query = query.filter(WalletAnalysis.risk_level == risk_level)
-    if min_score is not None:
-        query = query.filter(WalletAnalysis.final_score >= min_score)
-    if max_score is not None:
-        query = query.filter(WalletAnalysis.final_score <= max_score)
+        # Build query with filters
+        if risk_level:
+            base_query += " AND risk_level = :risk_level"
+            params["risk_level"] = risk_level
+        if min_score is not None:
+            base_query += " AND final_score >= :min_score"
+            params["min_score"] = min_score
+        if max_score is not None:
+            base_query += " AND final_score <= :max_score"
+            params["max_score"] = max_score
 
-    # Apply pagination
-    total = query.count()
-    wallets = query.offset(skip).limit(limit).all()
+        # Add pagination
+        base_query += " LIMIT :limit OFFSET :skip"
+        params.update({"limit": limit, "skip": skip})
 
-    return {
-        "total": total,
-        "wallets": [wallet.to_dict() for wallet in wallets]
-    }
+        # Get total count (without pagination)
+        count_query = base_query.replace("SELECT *", "SELECT COUNT(*)")
+        count_query = count_query[:count_query.find(" LIMIT")]
+        total = db.execute(text(count_query), params).scalar()
+
+        # Get paginated results
+        wallets = db.execute(text(base_query), params).fetchall()
+
+        return {
+            "total": total,
+            "wallets": [dict(wallet) for wallet in wallets]
+        }
+
+    except SQLAlchemyError as e:
+        logger.error(f"Database error fetching wallets: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Error retrieving wallet data from database"
+        )
+    except Exception as e:
+        logger.error(f"Error fetching wallets: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while retrieving wallet data"
+        )
 
 
 @router.delete("/{wallet_address}")
@@ -102,12 +145,40 @@ async def delete_wallet_analysis(wallet_address: str, db: Session = Depends(get_
     """
     Delete analysis results for a specific wallet address
     """
-    wallet = db.query(WalletAnalysis).filter(
-        WalletAnalysis.wallet_address == wallet_address).first()
-    if not wallet:
-        raise HTTPException(
-            status_code=404, detail="Wallet analysis not found")
+    try:        # First check if wallet exists
+        wallet = db.execute(
+            text("SELECT id FROM wallet_analyses WHERE wallet_address = :address"),
+            {"address": wallet_address}
+        ).fetchone()
 
-    db.delete(wallet)
-    db.commit()
-    return {"message": f"Wallet analysis for {wallet_address} has been deleted"}
+        if not wallet:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Wallet analysis not found"
+            )
+
+        # Then delete it
+        db.execute(
+            text("DELETE FROM wallet_analyses WHERE wallet_address = :address"),
+            {"address": wallet_address}
+        )
+        db.commit()
+
+        return {"message": f"Wallet analysis for {wallet_address} has been deleted"}
+
+    except HTTPException as he:
+        raise he
+    except SQLAlchemyError as e:
+        logger.error(f"Database error deleting wallet analysis: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Error deleting wallet analysis from database"
+        )
+    except Exception as e:
+        logger.error(f"Error deleting wallet analysis: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while deleting the wallet analysis"
+        )
