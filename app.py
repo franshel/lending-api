@@ -23,18 +23,13 @@ load_dotenv()
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Set base level to WARNING to suppress most automated logs
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
-# Enable print statements for development environment
-if os.getenv('ENVIRONMENT') != 'production':
-    logging.getLogger().setLevel(logging.DEBUG)
-    logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
-else:
-    # Disable prints in production by redirecting stdout
-    sys.stdout = open(os.devnull, 'w')
+# Only show explicit logging calls
+logger.setLevel(logging.INFO)
 
 # Create FastAPI application
 app = FastAPI(
@@ -92,7 +87,7 @@ def health_check():
 
 
 # Include API router
-app.include_router(api_router, prefix="/api")
+app.include_router(api_router)
 
 # Exception handler for unhandled exceptions
 
