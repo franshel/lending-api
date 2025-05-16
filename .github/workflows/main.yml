@@ -55,5 +55,6 @@ jobs:
                   ssh -v -o StrictHostKeyChecking=no ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} << EOF
                     docker pull ${{ env.DOCKER_USERNAME }}.azurecr.io/${{ env.DOCKER_REPOSITORY_NAME }}:${{ env.DOCKER_TAG }}
                     docker stop ${{ env.DOCKER_REPOSITORY_NAME }} || true
+                    docker rm ${{ env.DOCKER_REPOSITORY_NAME }} || true
                     docker run -d --env-file .lending-api.env --add-host=host.docker.internal:172.17.0.1 --name ${{ env.DOCKER_REPOSITORY_NAME }} -p ${{ env.DOCKER_RUNNING_PORT }}:8000 ${{ env.DOCKER_USERNAME }}.azurecr.io/${{ env.DOCKER_REPOSITORY_NAME }}:${{ env.DOCKER_TAG }}
                   EOF
