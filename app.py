@@ -21,7 +21,7 @@ import sys
 # Load environment variables
 load_dotenv()
 
-# Configure logging
+# # Configure logging
 logging.basicConfig(
     level=logging.WARNING,  # Set base level to WARNING to suppress most automated logs
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -30,6 +30,30 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 # Only show explicit logging calls
 logger.setLevel(logging.INFO)
+
+# EXTREME LOGGING
+# Configure logging with more detailed settings
+# logging.basicConfig(
+#     level=logging.DEBUG,  # Set to DEBUG for most verbose logging
+#     format='%(asctime)s [%(levelname)s] %(name)s - %(message)s - %(filename)s:%(lineno)d',
+#     handlers=[
+#         logging.StreamHandler(sys.stdout),
+#         logging.FileHandler('app.log')
+#     ]
+# )
+
+# # Create logger instance
+# logger = logging.getLogger(__name__)
+# logger.setLevel(logging.DEBUG)
+
+# # Log SQL queries
+# logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
+# logging.getLogger('sqlalchemy.pool').setLevel(logging.DEBUG)
+
+# # Log FastAPI requests
+# logging.getLogger("fastapi").setLevel(logging.DEBUG)
+# logging.getLogger("uvicorn").setLevel(logging.INFO)
+# END OF LOGGING CONFIGURATION
 
 # Create FastAPI application
 app = FastAPI(
@@ -114,6 +138,7 @@ async def startup_event():
     Base.metadata.create_all(bind=engine)
 
     # Start periodic tasks
+    # TODO: ENABLE BEFORE PUSH
     global price_update_task, liquidation_task
     price_update_task = asyncio.create_task(start_periodic_updates(14400))
     liquidation_task = asyncio.create_task(start_periodic_liquidations(14400))

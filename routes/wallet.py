@@ -51,9 +51,16 @@ async def get_wallet_analysis(wallet_address: str, db: Session = Depends(get_db)
     Get analysis results for a specific wallet address
     """
     try:
-        # Use direct SQL to avoid ORM relationship issues
+        # Use direct SQL with explicit column selection
         wallet_query = db.execute(
-            text("SELECT * FROM wallet_analyses WHERE wallet_address = :address"),
+            text("""
+                SELECT wallet_address, network, analysis_timestamp, final_score,
+                       risk_level, wallet_metadata, scoring_breakdown,
+                       behavioral_patterns, transactions, token_holdings,
+                       comments, created_at, updated_at
+                FROM wallet_analyses 
+                WHERE wallet_address = :address
+            """),
             {"address": wallet_address}
         ).fetchone()
 
@@ -63,8 +70,24 @@ async def get_wallet_analysis(wallet_address: str, db: Session = Depends(get_db)
                 detail="Wallet analysis not found"
             )
 
-        # Convert to dictionary safely
-        return dict(wallet_query)
+        # Convert to dictionary with explicit field mapping
+        result = {
+            "wallet_address": wallet_query.wallet_address,
+            "network": wallet_query.network,
+            "analysis_timestamp": wallet_query.analysis_timestamp.isoformat() if wallet_query.analysis_timestamp else None,
+            "final_score": wallet_query.final_score,
+            "risk_level": wallet_query.risk_level,
+            "wallet_metadata": wallet_query.wallet_metadata,
+            "scoring_breakdown": wallet_query.scoring_breakdown,
+            "behavioral_patterns": wallet_query.behavioral_patterns,
+            "transactions": wallet_query.transactions,
+            "token_holdings": wallet_query.token_holdings,
+            "comments": wallet_query.comments,
+            "created_at": wallet_query.created_at.isoformat() if wallet_query.created_at else None,
+            "updated_at": wallet_query.updated_at.isoformat() if wallet_query.updated_at else None
+        }
+
+        return result
 
     except HTTPException as he:
         raise he
@@ -95,7 +118,13 @@ async def get_all_wallets(
     Get all analyzed wallets with optional filtering
     """
     try:
-        base_query = "SELECT * FROM wallet_analyses WHERE 1=1"
+        columns = """
+            wallet_address, network, analysis_timestamp, final_score,
+            risk_level, wallet_metadata, scoring_breakdown,
+            behavioral_patterns, transactions, token_holdings,
+            comments, created_at, updated_at
+        """
+        base_query = f"SELECT {columns} FROM wallet_analyses WHERE 1=1"
         params = {}
 
         # Build query with filters
@@ -114,16 +143,41 @@ async def get_all_wallets(
         params.update({"limit": limit, "skip": skip})
 
         # Get total count (without pagination)
-        count_query = base_query.replace("SELECT *", "SELECT COUNT(*)")
-        count_query = count_query[:count_query.find(" LIMIT")]
+        count_query = "SELECT COUNT(*) FROM wallet_analyses WHERE 1=1"
+        if risk_level:
+            count_query += " AND risk_level = :risk_level"
+        if min_score is not None:
+            count_query += " AND final_score >= :min_score"
+        if max_score is not None:
+            count_query += " AND final_score <= :max_score"
         total = db.execute(text(count_query), params).scalar()
 
         # Get paginated results
         wallets = db.execute(text(base_query), params).fetchall()
 
+        # Convert results to dictionaries with proper handling
+        wallet_list = []
+        for wallet in wallets:
+            wallet_dict = {
+                "wallet_address": wallet.wallet_address,
+                "network": wallet.network,
+                "analysis_timestamp": wallet.analysis_timestamp.isoformat() if wallet.analysis_timestamp else None,
+                "final_score": wallet.final_score,
+                "risk_level": wallet.risk_level,
+                "wallet_metadata": wallet.wallet_metadata,
+                "scoring_breakdown": wallet.scoring_breakdown,
+                "behavioral_patterns": wallet.behavioral_patterns,
+                "transactions": wallet.transactions,
+                "token_holdings": wallet.token_holdings,
+                "comments": wallet.comments,
+                "created_at": wallet.created_at.isoformat() if wallet.created_at else None,
+                "updated_at": wallet.updated_at.isoformat() if wallet.updated_at else None
+            }
+            wallet_list.append(wallet_dict)
+
         return {
             "total": total,
-            "wallets": [dict(wallet) for wallet in wallets]
+            "wallets": wallet_list
         }
 
     except SQLAlchemyError as e:

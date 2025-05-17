@@ -11,7 +11,7 @@ from web3 import Web3
 from eth_account.signers.local import LocalAccount
 
 # Define the API base URL
-API_BASE_URL = "http://localhost:8000/api"
+API_BASE_URL = "http://localhost:8000"
 
 # Set up Web3 connection (just for signing, we don't need a working provider)
 w3 = Web3()
@@ -153,7 +153,8 @@ class Web3WalletSimulator:
             response.raise_for_status()
 
             proposal = response.json()
-            print(f"✓ Proposal created successfully with ID: {proposal.get('id')}")
+            print(
+                f"✓ Proposal created successfully with ID: {proposal.get('id')}")
             return proposal
 
         except Exception as e:
@@ -201,7 +202,8 @@ class Web3WalletSimulator:
             response.raise_for_status()
 
             analysis = response.json()
-            print(f"✓ Wallet analysis found with risk level: {analysis.get('risk_level')}")
+            print(
+                f"✓ Wallet analysis found with risk level: {analysis.get('risk_level')}")
             return analysis
 
         except Exception as e:
@@ -265,9 +267,14 @@ def load_wallet_info(filename="test_wallet.json") -> dict:
         return None
 
 
-def run_tests():
-    """Run the full test flow"""
-    wallet_info = load_wallet_info()
+def run_tests(generate_new=False):
+    """
+    Run the full test flow
+
+    Args:
+        generate_new (bool): If True, generates a new wallet regardless of existing one
+    """
+    wallet_info = None if generate_new else load_wallet_info()
 
     if wallet_info:
         print(f"Loading existing wallet: {wallet_info['address']}")
@@ -279,7 +286,8 @@ def run_tests():
 
     print(f"\n=== Test Wallet ===")
     print(f"Address: {wallet.address}")
-    print(f"Private Key: {wallet.private_key[:10]}...{wallet.private_key[-5:]}")
+    print(
+        f"Private Key: {wallet.private_key[:10]}...{wallet.private_key[-5:]}")
 
     print("\n=== Testing Authentication Flow ===")
     if not wallet.authenticate():
@@ -326,4 +334,11 @@ def run_tests():
 
 
 if __name__ == "__main__":
-    run_tests()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run Web3 integration tests")
+    parser.add_argument("--new-wallet", action="store_true",
+                        help="Generate a new wallet for testing regardless of existing one")
+    args = parser.parse_args()
+
+    run_tests(generate_new=args.new_wallet)

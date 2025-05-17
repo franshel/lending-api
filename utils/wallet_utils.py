@@ -1,6 +1,6 @@
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional, Union
 from fastapi import HTTPException
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 async def analyze_wallet_address(wallet_address: str, db: Session) -> Dict[str, Any]:
     """
     Analyze a wallet address and store the results in the database.
-    If the wallet has been analyzed before, the analysis will be updated.
+    For new wallets with no activity, uses a template instead of AI analysis.
 
     Args:
         wallet_address: Ethereum wallet address to analyze
@@ -49,49 +49,58 @@ async def analyze_wallet_address(wallet_address: str, db: Session) -> Dict[str, 
             transactions = []
             logger.error(f"Error fetching transactions: {str(e)}")
 
-        # If no data is available for the wallet, create minimal data for storage
+        # Template for new wallets with no activity
         if not transactions and not token_holdings:
-            # Return a response for wallets with no data
-            return {
+            wallet_data = {
                 "wallet_address": wallet_address,
-                "status": "no_data",
-                "message": "No transaction or token holding data found for this wallet address",
-                "timestamp": datetime.utcnow().isoformat()
+                "network": "ethereum",
+                "analysis_timestamp": datetime.now(timezone.utc),
+                "final_score": 0,
+                "risk_level": "unknown",
+                "wallet_metadata": {
+                    "age": "new",
+                    "activity_level": "none",
+                    "transaction_count": 0,
+                    "unique_interactions": 0
+                },
+                "scoring_breakdown": {
+                    "age_score": 0,
+                    "activity_score": 0,
+                    "balance_score": 0,
+                    "diversity_score": 0
+                },
+                "behavioral_patterns": [],
+                "transactions": [],
+                "token_holdings": [],
+                "comments": ["New wallet with no transaction history or token holdings."]
             }
+        else:
+            # Only use AI analysis if there is activity
+            analysis_result = generate(
+                wallet_address, token_holdings, transactions)
+            processed_analysis = serialize_pydantic_model(analysis_result)
+            processed_transactions = [serialize_pydantic_model(
+                tx) for tx in transactions] if isinstance(transactions, list) else []
 
-        # Generate analysis using AI
-        analysis_result = generate(
-            wallet_address, token_holdings, transactions)
-
-        # Process the analysis result with proper datetime handling
-        processed_analysis = serialize_pydantic_model(analysis_result)
-
-        # Process transactions with proper datetime handling
-        processed_transactions = None
-        if isinstance(transactions, list):
-            processed_transactions = [
-                serialize_pydantic_model(tx) for tx in transactions]
-
-        # Prepare data for storage with proper datetime serialization
-        wallet_data = {
-            "wallet_address": wallet_address,
-            "network": processed_analysis["network"],
-            "analysis_timestamp": processed_analysis["analysis_timestamp"],
-            "final_score": processed_analysis["final_score"],
-            "risk_level": processed_analysis["risk_level"],
-            "wallet_metadata": processed_analysis["wallet_metadata"],
-            "scoring_breakdown": processed_analysis["scoring_breakdown"],
-            "behavioral_patterns": processed_analysis["behavioral_patterns"],
-            "transactions": processed_transactions,
-            "token_holdings": token_holdings,
-            "comments": processed_analysis["comments"]
-        }
+            wallet_data = {
+                "wallet_address": wallet_address,
+                "network": getattr(processed_analysis, 'network', 'ethereum'),
+                "analysis_timestamp": getattr(processed_analysis, 'analysis_timestamp', datetime.now(datetime.timezone.utc)),
+                "final_score": getattr(processed_analysis, 'final_score', 0),
+                "risk_level": getattr(processed_analysis, 'risk_level', 'unknown'),
+                "wallet_metadata": getattr(processed_analysis, 'wallet_metadata', {}),
+                "scoring_breakdown": getattr(processed_analysis, 'scoring_breakdown', {}),
+                "behavioral_patterns": getattr(processed_analysis, 'behavioral_patterns', []),
+                "transactions": processed_transactions,
+                "token_holdings": token_holdings,
+                "comments": getattr(processed_analysis, 'comments', [])
+            }
 
         if existing:
             # Update existing record
             for key, value in wallet_data.items():
                 setattr(existing, key, value)
-            existing.updated_at = datetime.utcnow()
+            existing.updated_at = datetime.now(timezone.utc)
             db.commit()
             db.refresh(existing)
             return existing.to_dict()

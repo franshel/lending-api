@@ -99,6 +99,7 @@ async def update_my_profile(
 ):
     """
     Update the profile of the currently authenticated wallet.
+    Sets profile_completed to true when all required fields are present.
     """
     try:
         # First check if profile exists using direct SQL
@@ -116,6 +117,32 @@ async def update_my_profile(
                 detail=str(ve)
             )
 
+        # Check if all required fields are present for a complete profile
+        required_fields = [
+            "display_name", "email", "company_name",
+            "company_position", "company_website", "company_description"
+        ]
+
+        # Get existing profile data if it exists
+        existing_data = {}
+        if profile_exists:
+            existing_profile = db.execute(
+                text("SELECT * FROM wallet_profiles WHERE wallet_address = :address"),
+                {"address": wallet_address}
+            ).fetchone()
+            if existing_profile:
+                existing_data = dict(existing_profile)
+
+        # Combine existing data with updates to check completeness
+        combined_data = {**existing_data, **profile_data}
+        is_complete = all(combined_data.get(field)
+                          for field in required_fields)
+
+        logger.debug(
+            f"Profile completion check for {wallet_address}: {is_complete}")
+        logger.debug(f"Required fields: {required_fields}")
+        logger.debug(f"Combined data: {combined_data}")
+
         # Convert profile_data to SQL update parts
         update_parts = []
         update_values = {"address": wallet_address}
@@ -124,10 +151,15 @@ async def update_my_profile(
             update_parts.append(f"{key} = :{key}")
             update_values[key] = value
 
+        # Always include profile_completed in the update
+        update_parts.append("profile_completed = :profile_completed")
+        update_values["profile_completed"] = is_complete
+
         # If profile doesn't exist, create it
         if not profile_exists:
-            columns = ["wallet_address"] + list(profile_data.keys())
-            placeholders = [":address"] + \
+            columns = ["wallet_address", "profile_completed"] + \
+                list(profile_data.keys())
+            placeholders = [":address", ":profile_completed"] + \
                 [f":{k}" for k in profile_data.keys()]
 
             create_query = text(f"""
@@ -147,16 +179,14 @@ async def update_my_profile(
 
             db.execute(update_query, update_values)
 
-        db.commit()
-
-        # Fetch the updated profile
+        db.commit()        # Fetch the updated profile
         updated_profile = db.execute(
             text("""
                 SELECT wallet_address, display_name, email, bio, avatar_url, 
                        profile_completed, phone, website, social_media, 
                        company_name, company_position, company_website, 
                        company_description, email_verified, kyc_verified, 
-                       created_at, updated_at 
+                       created_at, updated_at
                 FROM wallet_profiles 
                 WHERE wallet_address = :address
             """),
@@ -167,7 +197,9 @@ async def update_my_profile(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Profile not found after update"
-            )        # Convert row to dictionary
+            )
+
+        # Convert to dictionary with explicit field mapping
         result = {
             "wallet_address": updated_profile.wallet_address,
             "display_name": updated_profile.display_name,

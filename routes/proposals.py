@@ -55,6 +55,9 @@ async def create_business_proposal(
             {"address": wallet_address}
         ).fetchone()
 
+        logger.debug(
+            f"Profile query result for {wallet_address}: {profile_query}")
+
         if not profile_query:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -62,6 +65,7 @@ async def create_business_proposal(
             )
 
         if not profile_query.profile_completed:
+            logger.debug(f"Profile not completed for wallet {wallet_address}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="You must complete your profile before creating a business proposal"
