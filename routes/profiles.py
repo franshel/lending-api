@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -69,11 +70,32 @@ async def get_my_profile(
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Error creating wallet profile"
-                )
-
-        # Convert SQLAlchemy Row to dict safely
-        profile_dict = dict(profile_result)
-        return profile_dict
+                )        # Convert SQLAlchemy Row to dict safely with explicit mapping
+        try:
+            profile_dict = dict(profile_result)
+            return profile_dict
+        except Exception as e:
+            logger.error(f"Error converting profile to dict: {str(e)}")
+            # Manually create dictionary from row attributes
+            return {
+                "wallet_address": profile_result.wallet_address,
+                "display_name": profile_result.display_name,
+                "email": profile_result.email,
+                "bio": profile_result.bio,
+                "avatar_url": profile_result.avatar_url,
+                "profile_completed": profile_result.profile_completed,
+                "phone": profile_result.phone,
+                "website": profile_result.website,
+                "social_media": profile_result.social_media,
+                "company_name": profile_result.company_name,
+                "company_position": profile_result.company_position,
+                "company_website": profile_result.company_website,
+                "company_description": profile_result.company_description,
+                "email_verified": profile_result.email_verified,
+                "kyc_verified": profile_result.kyc_verified,
+                "created_at": profile_result.created_at.isoformat() if profile_result.created_at else None,
+                "updated_at": profile_result.updated_at.isoformat() if profile_result.updated_at else None
+            }
 
     except HTTPException as he:
         raise he
@@ -128,10 +150,32 @@ async def update_my_profile(
         if profile_exists:
             existing_profile = db.execute(
                 text("SELECT * FROM wallet_profiles WHERE wallet_address = :address"),
-                {"address": wallet_address}
-            ).fetchone()
+            {"address": wallet_address}
+        ).fetchone()
             if existing_profile:
-                existing_data = dict(existing_profile)
+                try:
+                    existing_data = dict(existing_profile)
+                except Exception as e:
+                    # Log the error and create a safe dictionary from profile attributes
+                    logger.error(f"Error converting profile to dict: {str(e)}")
+                    # Manually create dictionary from column names and values
+                    existing_data = {
+                        "wallet_address": existing_profile.wallet_address,
+                        "display_name": existing_profile.display_name,
+                        "email": existing_profile.email,
+                        "bio": existing_profile.bio,
+                        "avatar_url": existing_profile.avatar_url,
+                        "profile_completed": existing_profile.profile_completed,
+                        "phone": existing_profile.phone,
+                        "website": existing_profile.website,
+                        "social_media": existing_profile.social_media,
+                        "company_name": existing_profile.company_name,
+                        "company_position": existing_profile.company_position,
+                        "company_website": existing_profile.company_website,
+                        "company_description": existing_profile.company_description,
+                        "email_verified": existing_profile.email_verified,
+                        "kyc_verified": existing_profile.kyc_verified
+                    }
 
         # Combine existing data with updates to check completeness
         combined_data = {**existing_data, **profile_data}
@@ -151,35 +195,62 @@ async def update_my_profile(
             update_parts.append(f"{key} = :{key}")
             update_values[key] = value
 
-        # Always include profile_completed in the update
+        # Always include profile_completed, email_verified, and kyc_verified in the update
+        # Ensure profile_completed, email_verified, and kyc_verified are included in the update
         update_parts.append("profile_completed = :profile_completed")
         update_values["profile_completed"] = is_complete
 
-        # If profile doesn't exist, create it
+        update_parts.append("email_verified = :email_verified")
+        update_values["email_verified"] = True
+
+        update_parts.append("kyc_verified = :kyc_verified")
+        update_values["kyc_verified"] = True
+
+        # Ensure updated_at is set to the current timestamp
+        update_parts.append("updated_at = :updated_at")
+        update_values["updated_at"] = datetime.utcnow()        # Handle the case where the profile does not exist
         if not profile_exists:
-            columns = ["wallet_address", "profile_completed"] + \
-                list(profile_data.keys())
-            placeholders = [":address", ":profile_completed"] + \
-                [f":{k}" for k in profile_data.keys()]
+            # Set created_at for a new profile
+            update_values["created_at"] = datetime.utcnow()
+
+            # Insert a new profile with all required fields
+            columns = ["wallet_address", "profile_completed", "email_verified", "kyc_verified", "created_at"] + \
+                  list(profile_data.keys())
+            placeholders = [":address", ":profile_completed", ":email_verified", ":kyc_verified", ":created_at"] + \
+                   [f":{key}" for key in profile_data.keys()]
 
             create_query = text(f"""
-                INSERT INTO wallet_profiles ({', '.join(columns)})
-                VALUES ({', '.join(placeholders)})
+            INSERT INTO wallet_profiles ({', '.join(columns)})
+            VALUES ({', '.join(placeholders)})
             """)
 
             db.execute(create_query, update_values)
+        else:
+            # Ensure created_at remains unchanged for existing profiles
+            update_parts.append("created_at = :created_at")
+            update_values["created_at"] = existing_data.get("created_at")
+            
+            # If we have fields to update and the profile exists
+            if update_parts:
+                update_query = text(f"""
+                UPDATE wallet_profiles
+                SET {', '.join(update_parts)}
+                WHERE wallet_address = :address
+                """)
+
+                db.execute(update_query, update_values)
 
         # If we have fields to update
         elif update_parts:
             update_query = text(f"""
-                UPDATE wallet_profiles
-                SET {', '.join(update_parts)}
-                WHERE wallet_address = :address
+            UPDATE wallet_profiles
+            SET {', '.join(update_parts)}
+            WHERE wallet_address = :address
             """)
 
             db.execute(update_query, update_values)
 
-        db.commit()        # Fetch the updated profile
+        db.commit()
         updated_profile = db.execute(
             text("""
                 SELECT wallet_address, display_name, email, bio, avatar_url, 
@@ -197,9 +268,7 @@ async def update_my_profile(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Profile not found after update"
-            )
-
-        # Convert to dictionary with explicit field mapping
+            )        # Convert to dictionary with explicit field mapping - safer than dict()
         result = {
             "wallet_address": updated_profile.wallet_address,
             "display_name": updated_profile.display_name,
@@ -216,8 +285,9 @@ async def update_my_profile(
             "company_description": updated_profile.company_description,
             "email_verified": updated_profile.email_verified,
             "kyc_verified": updated_profile.kyc_verified,
-            "created_at": updated_profile.created_at.isoformat() if updated_profile.created_at else None,
-            "updated_at": updated_profile.updated_at.isoformat() if updated_profile.updated_at else None
+            # Always include created_at and updated_at as they're required by WalletProfileResponse
+            "created_at": updated_profile.created_at.isoformat() if updated_profile.created_at else datetime.utcnow().isoformat(),
+            "updated_at": updated_profile.updated_at.isoformat() if updated_profile.updated_at else datetime.utcnow().isoformat(),
         }
 
         return result
@@ -259,7 +329,36 @@ async def get_all_profiles(
     """
     try:
         profiles = db.query(WalletProfile).offset(skip).limit(limit).all()
-        return [dict(profile) for profile in profiles]
+        result = []
+        for profile in profiles:
+            try:
+                result.append(dict(profile))
+            except Exception as e:
+                logger.error(f"Error converting profile to dict: {str(e)}")
+                # Use the model's to_dict method or fallback to manual mapping
+                if hasattr(profile, 'to_dict'):
+                    result.append(profile.to_dict())
+                else:
+                    result.append({
+                        "wallet_address": profile.wallet_address,
+                        "display_name": profile.display_name,
+                        "email": profile.email,
+                        "bio": profile.bio,
+                        "avatar_url": profile.avatar_url,
+                        "profile_completed": profile.profile_completed,
+                        "phone": profile.phone,
+                        "website": profile.website,
+                        "social_media": profile.social_media,
+                        "company_name": profile.company_name,
+                        "company_position": profile.company_position,
+                        "company_website": profile.company_website,
+                        "company_description": profile.company_description,
+                        "email_verified": profile.email_verified,
+                        "kyc_verified": profile.kyc_verified,
+                        "created_at": profile.created_at.isoformat() if profile.created_at else None,
+                        "updated_at": profile.updated_at.isoformat() if profile.updated_at else None
+                    })
+        return result
     except SQLAlchemyError as e:
         logger.error(f"Database error fetching profiles: {str(e)}")
         raise HTTPException(
@@ -294,7 +393,30 @@ async def get_wallet_profile(
                 detail=f"Profile not found for wallet address {wallet_address}"
             )
 
-        return dict(profile_result)
+        try:
+            return dict(profile_result)
+        except Exception as e:
+            logger.error(f"Error converting profile to dict: {str(e)}")
+            # Manually create dictionary from row attributes
+            return {
+                "wallet_address": profile_result.wallet_address,
+                "display_name": profile_result.display_name,
+                "email": profile_result.email,
+                "bio": profile_result.bio,
+                "avatar_url": profile_result.avatar_url,
+                "profile_completed": profile_result.profile_completed,
+                "phone": profile_result.phone,
+                "website": profile_result.website,
+                "social_media": profile_result.social_media,
+                "company_name": profile_result.company_name,
+                "company_position": profile_result.company_position,
+                "company_website": profile_result.company_website,
+                "company_description": profile_result.company_description,
+                "email_verified": profile_result.email_verified,
+                "kyc_verified": profile_result.kyc_verified,
+                "created_at": profile_result.created_at.isoformat() if profile_result.created_at else None,
+                "updated_at": profile_result.updated_at.isoformat() if profile_result.updated_at else None
+            }
 
     except HTTPException as he:
         raise he

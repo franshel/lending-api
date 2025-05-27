@@ -27,7 +27,7 @@ target_metadata = Base.metadata
 
 # Get the database URL from the environment
 url = os.environ.get(
-    "DATABASE_URL", "postgresql://postgres:postgres@157.230.244.71:9999/postgres")
+    "DATABASE_URL", "postgresql://postgres:d1ngd0ngl04ns@152.42.205.255:9999/postgres")
 config.set_main_option("sqlalchemy.url", url)
 
 

@@ -9,7 +9,7 @@ import logging
 
 # Get the database URL from environment variable or use a default
 DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgresql://postgres:postgres@157.230.244.71:9999/postgres")
+    "DATABASE_URL", "postgresql://postgres:d1ngd0ngl04ns@152.42.205.255:9999/postgres")
 
 # Create the SQLAlchemy engine
 engine = create_engine(DATABASE_URL)

@@ -2,6 +2,10 @@ import os
 from alembic.config import Config
 from alembic import command
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 def setup_alembic():
     """Set up Alembic for database migrations"""
@@ -14,7 +18,7 @@ def setup_alembic():
 
     # Set the SQLAlchemy URL
     database_url = os.environ.get(
-        "DATABASE_URL", "postgresql://postgres:postgres@157.230.244.71:9999/postgres")
+        "DATABASE_URL", "")
     alembic_cfg.set_main_option("sqlalchemy.url", database_url)
 
     # Create the migration environment

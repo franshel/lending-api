@@ -11,7 +11,7 @@ from web3 import Web3
 from eth_account.signers.local import LocalAccount
 
 # Define the API base URL
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = "http://127.0.0.1:8000"
 
 # Set up Web3 connection (just for signing, we don't need a working provider)
 w3 = Web3()
@@ -65,6 +65,9 @@ class Web3WalletSimulator:
                 f"{API_BASE_URL}/auth/request-message",
                 json={"wallet_address": self.address}
             )
+            print("\nRequest message response:")
+            print(f"Status: {response.status_code}")
+            print("Response data:", json.dumps(response.json(), indent=2))
             response.raise_for_status()
 
             message_data = response.json()
@@ -84,6 +87,9 @@ class Web3WalletSimulator:
                     "signature": signature
                 }
             )
+            print("\nVerification response:")
+            print(f"Status: {response.status_code}")
+            print("Response data:", json.dumps(response.json(), indent=2))
             response.raise_for_status()
 
             auth_data = response.json()
@@ -93,8 +99,13 @@ class Web3WalletSimulator:
 
         except Exception as e:
             print(f"× Authentication failed: {str(e)}")
-            if hasattr(e, 'response') and e.response:
-                print(f"× Response: {e.response.text}")
+            if hasattr(e, 'response'):
+                print(f"Status: {e.response.status_code}")
+                try:
+                    error_data = e.response.json()
+                    print("Error response:", json.dumps(error_data, indent=2))
+                except:
+                    print("Raw response:", e.response.text)
             return False
 
     def get_auth_headers(self) -> dict:
@@ -242,8 +253,8 @@ class Web3WalletSimulator:
 
         except Exception as e:
             print(f"× Failed to update profile: {str(e)}")
-            if hasattr(e, 'response') and e.response:
-                print(f"× Response: {e.response.text}")
+            # if hasattr(e, 'response') and e.response:
+            print(f"× Response: {e.response.text}")
             return None
 
 
@@ -276,13 +287,14 @@ def run_tests(generate_new=False):
     """
     wallet_info = None if generate_new else load_wallet_info()
 
-    if wallet_info:
-        print(f"Loading existing wallet: {wallet_info['address']}")
-        wallet = Web3WalletSimulator(private_key=wallet_info['private_key'])
-    else:
-        print("Creating new test wallet...")
-        wallet = Web3WalletSimulator()
-        save_wallet_info(wallet)
+    # create new wallet every new test.
+    # if wallet_info:
+    #     print(f"Loading existing wallet: {wallet_info['address']}")
+    #     wallet = Web3WalletSimulator(private_key=wallet_info['private_key'])
+    # else:
+    print("Creating new test wallet...")
+    wallet = Web3WalletSimulator()
+    save_wallet_info(wallet)
 
     print(f"\n=== Test Wallet ===")
     print(f"Address: {wallet.address}")
