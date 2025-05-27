@@ -150,8 +150,8 @@ async def update_my_profile(
         if profile_exists:
             existing_profile = db.execute(
                 text("SELECT * FROM wallet_profiles WHERE wallet_address = :address"),
-            {"address": wallet_address}
-        ).fetchone()
+                {"address": wallet_address}
+            ).fetchone()
             if existing_profile:
                 try:
                     existing_data = dict(existing_profile)
@@ -208,16 +208,17 @@ async def update_my_profile(
 
         # Ensure updated_at is set to the current timestamp
         update_parts.append("updated_at = :updated_at")
-        update_values["updated_at"] = datetime.utcnow()        # Handle the case where the profile does not exist
+        # Handle the case where the profile does not exist
+        update_values["updated_at"] = datetime.utcnow()
         if not profile_exists:
             # Set created_at for a new profile
             update_values["created_at"] = datetime.utcnow()
 
             # Insert a new profile with all required fields
             columns = ["wallet_address", "profile_completed", "email_verified", "kyc_verified", "created_at"] + \
-                  list(profile_data.keys())
+                list(profile_data.keys())
             placeholders = [":address", ":profile_completed", ":email_verified", ":kyc_verified", ":created_at"] + \
-                   [f":{key}" for key in profile_data.keys()]
+                [f":{key}" for key in profile_data.keys()]
 
             create_query = text(f"""
             INSERT INTO wallet_profiles ({', '.join(columns)})
@@ -229,7 +230,7 @@ async def update_my_profile(
             # Ensure created_at remains unchanged for existing profiles
             update_parts.append("created_at = :created_at")
             update_values["created_at"] = existing_data.get("created_at")
-            
+
             # If we have fields to update and the profile exists
             if update_parts:
                 update_query = text(f"""
@@ -241,7 +242,7 @@ async def update_my_profile(
                 db.execute(update_query, update_values)
 
         # If we have fields to update
-        elif update_parts:
+        if update_parts:
             update_query = text(f"""
             UPDATE wallet_profiles
             SET {', '.join(update_parts)}
