@@ -1,4 +1,4 @@
-from utils.holdings import format_token_holding, get_token_holdings_summary  # type: ignore
+from utils.holdings import format_token_holding, get_token_holdings_data  # type: ignore
 from utils.transactions import get_tx_data, tx_verbose_string  # type: ignore
 from schemas.schemas import FraudRiskAnalysis, WalletMetadata, BehavioralPatterns, ContractUsage, ScoringBreakdown
 from dotenv import load_dotenv
@@ -19,18 +19,18 @@ You must:
 * Assume anonymity is normal; unverified wallets are not inherently suspicious.
 * Apply the scoring rubric as follows (maximum 100%, higher score = safer behavior):
 
-  * +15% if wallet has both inbound and outbound transactions (−15% if outbound only)
-  * +10% if transaction amounts are consistent or logically variable (−10% if arbitrary or erratic)
-  * +10% if wallet interacts with multiple contracts/addresses (−10% if single recipient or contract)
-  * +5% if there is a ≥10-minute delay before spending after funding (−5% if transfers are immediate)
-  * +10% if all interacted contracts are verified (−10% if unverified contracts are involved)
-  * +5% if contracts are publicly known or widely used (−5% if obscure or low-usage)
-  * +5% if only standard methods like `transfer`, `stake`, or `swap` are used (−5% for custom/obfuscated methods)
-  * +10% if funded by established or active wallets (−10% if funded by fresh or suspicious wallets)
-  * +10% if the wallet is at least 7 days old (−10% if newly created)
-  * +5% if wallet uses multiple tokens (−5% if only one token is involved)
-  * +5% if wallet uses smart contract functions beyond transfers (−5% if only transfers)
-  * +10% if wallet has no known scam/mixer/flagged connections (−10% if linked to flagged addresses)
+  * +15% if wallet has both inbound and outbound transactions (0% if outbound only)
+  * +10% if transaction amounts are consistent or logically variable (0% if arbitrary or erratic)
+  * +10% if wallet interacts with multiple contracts/addresses (0% if single recipient or contract)
+  * +5% if there is a ≥10-minute delay before spending after funding (0% if transfers are immediate)
+  * +10% if all interacted contracts are verified (0% if unverified contracts are involved)
+  * +5% if contracts are publicly known or widely used (0% if obscure or low-usage)
+  * +5% if only standard methods like `transfer`, `stake`, or `swap` are used (0% for custom/obfuscated methods)
+  * +10% if funded by established or active wallets (0% if funded by fresh or suspicious wallets)
+  * +10% if the wallet is at least 7 days old (0% if newly created)
+  * +5% if wallet uses multiple tokens (0% if only one token is involved)
+  * +5% if wallet uses smart contract functions beyond transfers (0% if only transfers)
+  * +10% if wallet has no known scam/mixer/flagged connections (0% if linked to flagged addresses)
 
 Do not generate a subjective opinion. Only return the final score, the contributing deductions or additions, and a brief justification for each. The analysis must be objective, audit-friendly, and transparent. Always assume your output may be used as input to a larger fraud detection system.
 
@@ -139,6 +139,7 @@ Transaction Summary:
         # thinking_config=thinking_config,
     )
 
+    print("Generating analysis")
     response = client.models.generate_content(
         model=model,
         contents=contents,
@@ -151,16 +152,24 @@ Transaction Summary:
     # Override the timestamp to ensure it's current
     analysis_result.analysis_timestamp = datetime.now()
 
+    final_score = 0.0
+    for i in analysis_result.scoring_breakdown:
+        final_score += i.score_delta
+
+    analysis_result.final_score = final_score
+
     # Set the network if not already set
     if not hasattr(analysis_result, 'network') or not analysis_result.network:
         analysis_result.network = "Lisk"
 
+    with open('analysis_result.json', 'w') as f:
+        f.write(analysis_result.model_dump_json(indent=2))
     return analysis_result
 
 
-# if __name__ == "__main__":
-#     wallet_address = "0xB45aF91Ded52Dde37c0f62fec59abC07f6b8622a"
-#     token_holdings = get_token_holdings_summary(wallet_address)
-#     tx_data = get_tx_data(wallet_address)
-#     analysis = generate(wallet_address, token_holdings, tx_data)
-#     print(analysis)
+if __name__ == "__main__":
+    wallet_address = "0xeBe5f532F357D053aAd4Ca5E95d2ac1cb308091E"
+    token_holdings = get_token_holdings_data(wallet_address)
+    tx_data = get_tx_data(wallet_address)
+    analysis = generate(wallet_address, token_holdings, tx_data)
+    # print(analysis)

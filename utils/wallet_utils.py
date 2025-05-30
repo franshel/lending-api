@@ -49,8 +49,11 @@ async def analyze_wallet_address(wallet_address: str, db: Session) -> Dict[str, 
             transactions = []
             logger.error(f"Error fetching transactions: {str(e)}")
 
+        print("REACHED FUCKING HERE")
+        print(transactions, token_holdings)
         # Template for new wallets with no activity
         if not transactions and not token_holdings:
+            print("no tx and no holdings")
             wallet_data = {
                 "wallet_address": wallet_address,
                 "network": "ethereum",
@@ -75,28 +78,34 @@ async def analyze_wallet_address(wallet_address: str, db: Session) -> Dict[str, 
                 "comments": ["New wallet with no transaction history or token holdings."]
             }
         else:
+            print("have tx and hv holdings")
+
             # Only use AI analysis if there is activity
             analysis_result = generate(
                 wallet_address, token_holdings, transactions)
+            print("analysis result", analysis_result)
             processed_analysis = serialize_pydantic_model(analysis_result)
-            processed_transactions = [serialize_pydantic_model(
-                tx) for tx in transactions] if isinstance(transactions, list) else []
-
+            print("processed analysis", processed_analysis)
+            processed_transactions = [tx.model_dump_json()
+                                      for tx in transactions]
+            print("processed transactions", processed_transactions)
             wallet_data = {
                 "wallet_address": wallet_address,
-                "network": getattr(processed_analysis, 'network', 'ethereum'),
-                "analysis_timestamp": getattr(processed_analysis, 'analysis_timestamp', datetime.now(datetime.timezone.utc)),
-                "final_score": getattr(processed_analysis, 'final_score', 0),
-                "risk_level": getattr(processed_analysis, 'risk_level', 'unknown'),
-                "wallet_metadata": getattr(processed_analysis, 'wallet_metadata', {}),
-                "scoring_breakdown": getattr(processed_analysis, 'scoring_breakdown', {}),
-                "behavioral_patterns": getattr(processed_analysis, 'behavioral_patterns', []),
+                "network": processed_analysis.get('network', 'ethereum'),
+                "analysis_timestamp": processed_analysis.get('analysis_timestamp', datetime.now(timezone.utc)),
+                "final_score": processed_analysis.get('final_score', 0),
+                "risk_level": processed_analysis.get('risk_level', 'unknown'),
+                "wallet_metadata": processed_analysis.get('wallet_metadata', {}),
+                "scoring_breakdown": processed_analysis.get('scoring_breakdown', {}),
+                "behavioral_patterns": processed_analysis.get('behavioral_patterns', []),
                 "transactions": processed_transactions,
                 "token_holdings": token_holdings,
-                "comments": getattr(processed_analysis, 'comments', [])
+                "comments": processed_analysis.get('comments', [])
             }
+            print("wallet data", wallet_data)
 
         if existing:
+            print("existing wallet found")
             # Update existing record
             for key, value in wallet_data.items():
                 setattr(existing, key, value)
@@ -105,6 +114,7 @@ async def analyze_wallet_address(wallet_address: str, db: Session) -> Dict[str, 
             db.refresh(existing)
             return existing.to_dict()
         else:
+            print("no existing wallet found")
             # Create new record
             new_analysis = WalletAnalysis(**wallet_data)
             db.add(new_analysis)
@@ -192,6 +202,7 @@ async def background_wallet_analysis(wallet_address: str, db: Session) -> None:
                 f"Analysis for wallet {wallet_address} already exists, skipping background analysis")
             return
 
+        print('reached here.......')
         # Perform the wallet analysis
         result = await analyze_wallet_address(wallet_address, background_db)
         logger.info(

@@ -137,11 +137,32 @@ async def startup_event():
     # Create database tables
     Base.metadata.create_all(bind=engine)
 
-    # Start periodic tasks
-    # TODO: ENABLE BEFORE PUSH
+    # Start periodic tasks with proper task naming and error handling
     global price_update_task, liquidation_task
-    price_update_task = asyncio.create_task(start_periodic_updates(14400))
-    liquidation_task = asyncio.create_task(start_periodic_liquidations(14400))
+    
+    # Create the tasks with names for better debugging
+    price_update_task = asyncio.create_task(
+        start_periodic_updates(14400),
+        name="periodic_price_updates"
+    )
+    
+    # Add error handlers to prevent crashing
+    price_update_task.add_done_callback(
+        lambda t: logger.error(f"Price update task ended unexpectedly: {t.exception()}") 
+        if t.exception() else None
+    )
+    
+    liquidation_task = asyncio.create_task(
+        start_periodic_liquidations(14400), 
+        name="periodic_liquidations"
+    )
+    
+    # Add error handlers to prevent crashing
+    liquidation_task.add_done_callback(
+        lambda t: logger.error(f"Liquidation task ended unexpectedly: {t.exception()}")
+        if t.exception() else None
+    )
+    
     logger.info("Started periodic price updates and liquidation tasks")
 
 # Shutdown event

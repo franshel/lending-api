@@ -1,9 +1,14 @@
 
 import requests
+import json
 
 
 def format_token_holding(token_data):
     """Format token holding data into a friendly, easy-to-analyze string."""
+    # token_data = json.loads(token_data)
+
+    print('TD', token_data)
+
     token_info = token_data.get('token', {})
     token_instance = token_data.get('token_instance', {})
 
@@ -63,14 +68,17 @@ def get_token_holdings_data(wallet_address):
 
         holdings_data = response.json()
         if not holdings_data:
-            print(f"No token holdings found for wallet address: {wallet_address}")
+            print(
+                f"No token holdings found for wallet address: {wallet_address}")
             return []
 
-        print(f"Retrieved {len(holdings_data)} token holdings for {wallet_address}")
+        print(
+            f"Retrieved {len(holdings_data)} token holdings for {wallet_address}")
         return holdings_data
 
     except Exception as e:
-        print(f"Error retrieving token holdings for {wallet_address}: {str(e)}")
+        print(
+            f"Error retrieving token holdings for {wallet_address}: {str(e)}")
         return []
 
 
@@ -91,6 +99,7 @@ def get_token_holdings_summary(wallet_address):
             return []
 
         holdings_data = response.json()
+        print(holdings_data)
         if not holdings_data:
             print(
                 f"No token holdings found for wallet address: {wallet_address}")
