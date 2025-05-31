@@ -70,6 +70,8 @@ origins = [
     "http://localhost",
     "http://localhost:3000",  # For React frontend
     "http://localhost:8080",
+    "https://dingdong.loans"
+    "http://dingdong.loans"
     "*",  # Allow all origins (consider restricting in production)
 ]
 
