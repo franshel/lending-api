@@ -1,76 +1,76 @@
 {
   "wallet_address": "0xd753687bd85d85e19e88d6443a0432e552a96904",
   "network": "Lisk",
-  "analysis_timestamp": "2025-05-30T22:05:01.298188",
+  "analysis_timestamp": "2025-05-31T07:39:28.872077",
   "scoring_breakdown": [
     {
       "criteria": "Inbound and Outbound Transactions",
       "score_delta": 15.0,
-      "reason": "Wallet has both inbound (funding) and outbound (contract interaction) transactions."
+      "reason": "Wallet has both inbound and outbound transactions."
     },
     {
       "criteria": "Consistent Transaction Amounts",
-      "score_delta": 0.0,
-      "reason": "Transaction amounts are not available, so this criteria cannot be assessed."
+      "score_delta": 10.0,
+      "reason": "Transaction amounts appear consistent, primarily involving 'approve' and contract interaction methods."
     },
     {
       "criteria": "Multiple Contracts/Addresses",
       "score_delta": 0.0,
-      "reason": "Wallet interacts with only one contract address."
+      "reason": "Wallet interacts with only one contract."
     },
     {
       "criteria": "Delay Before Spending",
       "score_delta": 0.0,
-      "reason": "Delay between funding and spending is not available."
+      "reason": "No funding transaction is available to determine the delay before spending."
     },
     {
-      "criteria": "All Contracts Verified",
+      "criteria": "Verified Contracts",
       "score_delta": 10.0,
       "reason": "All interacted contracts are verified."
     },
     {
-      "criteria": "Publicly Known/Widely Used Contracts",
+      "criteria": "Publicly Known Contracts",
       "score_delta": 0.0,
-      "reason": "Contract usage is not publicly known or widely used."
+      "reason": "The contract is not publicly known or widely used."
     },
     {
       "criteria": "Standard Methods Used",
-      "score_delta": 0.0,
-      "reason": "The method 'updateAnswer' is a custom method."
+      "score_delta": 5.0,
+      "reason": "Standard methods like 'approve', 'repayLoan', 'takeLoan', 'fundUser', 'mint', 'depositCollateral', 'resetCollateralRaising', 'closeCollateralRaising', and 'updateAnswer' are used."
     },
     {
-      "criteria": "Funded by Established/Active Wallets",
+      "criteria": "Funded by Established Wallets",
       "score_delta": 0.0,
-      "reason": "Funding source is not available."
+      "reason": "No information on the funding source is available."
     },
     {
       "criteria": "Wallet Age",
       "score_delta": 0.0,
-      "reason": "Wallet age is not available."
+      "reason": "Wallet age is less than 7 days (created on 2025-05-30)."
     },
     {
       "criteria": "Multiple Tokens Used",
       "score_delta": 5.0,
-      "reason": "Wallet uses multiple tokens (USDT, LSK, IDRX)."
+      "reason": "Wallet uses multiple tokens (USDT, IDRX, LSK)."
     },
     {
       "criteria": "Smart Contract Functions Beyond Transfers",
       "score_delta": 5.0,
-      "reason": "Wallet uses smart contract functions beyond transfers ('updateAnswer')."
+      "reason": "Wallet uses smart contract functions beyond transfers such as 'approve', 'repayLoan', 'takeLoan', 'fundUser', 'mint', 'depositCollateral', 'resetCollateralRaising', 'closeCollateralRaising', and 'updateAnswer'."
     },
     {
-      "criteria": "No Known Scam/Mixer/Flagged Connections",
+      "criteria": "No Known Scam/Mixer Connections",
       "score_delta": 0.0,
-      "reason": "No information on scam/mixer/flagged connections is available."
+      "reason": "No information available to determine if the wallet has connections to known scams, mixers, or flagged addresses."
     }
   ],
   "wallet_metadata": {
-    "first_seen": "2025-05-30T14:17:52Z",
-    "last_seen": "2025-05-30T15:04:34Z",
+    "first_seen": "2025-05-30T20:03:32Z",
+    "last_seen": "2025-05-31T00:30:50Z",
     "age_days": 0,
-    "total_transactions": 54,
-    "inbound_count": 0,
-    "outbound_count": 54,
+    "total_transactions": 53,
+    "inbound_count": 1,
+    "outbound_count": 52,
     "unique_tokens_used": 3,
     "unique_contracts_interacted": 1,
     "uses_only_transfers": false,
@@ -79,7 +79,7 @@
     "linked_to_flagged_entity": false
   },
   "behavioral_patterns": {
-    "outbound_only": true,
+    "outbound_only": false,
     "transaction_anomalies": [],
     "contract_usage": {
       "single_contract_usage": true,
@@ -87,6 +87,6 @@
     }
   },
   "comments": null,
-  "final_score": 35.0,
+  "final_score": 50.0,
   "risk_level": "Medium"
 }

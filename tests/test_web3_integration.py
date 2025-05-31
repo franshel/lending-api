@@ -11,7 +11,7 @@ from web3 import Web3
 from eth_account.signers.local import LocalAccount
 
 # Define the API base URL
-API_BASE_URL = "http://127.0.0.1:8000"
+API_BASE_URL = "https://api.dingdong.loans"
 
 # Set up Web3 connection (just for signing, we don't need a working provider)
 w3 = Web3()
@@ -288,13 +288,13 @@ def run_tests(generate_new=False):
     wallet_info = None if generate_new else load_wallet_info()
 
     # create new wallet every new test.
-    if wallet_info:
-        print(f"Loading existing wallet: {wallet_info['address']}")
-        wallet = Web3WalletSimulator(private_key=wallet_info['private_key'])
-    else:
-        print("Creating new test wallet...")
-        wallet = Web3WalletSimulator()
-        save_wallet_info(wallet)
+    # if wallet_info:
+    #     print(f"Loading existing wallet: {wallet_info['address']}")
+    #     wallet = Web3WalletSimulator(private_key=wallet_info['private_key'])
+    # else:
+    print("Creating new test wallet...")
+    wallet = Web3WalletSimulator()
+    save_wallet_info(wallet)
 
     print(f"\n=== Test Wallet ===")
     print(f"Address: {wallet.address}")

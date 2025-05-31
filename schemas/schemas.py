@@ -251,8 +251,8 @@ class WalletProfileResponse(WalletProfileBase):
     profile_completed: bool
     email_verified: bool
     kyc_verified: bool
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         orm_mode = True

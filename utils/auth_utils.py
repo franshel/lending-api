@@ -20,7 +20,7 @@ SECRET_KEY = os.getenv(
     "JWT_SECRET_KEY", "your-secret-key-for-jwt-please-change-in-production")
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(
-    os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "525600"))
 
 # Web3 provider setup - can be configured via environment variables
 WEB3_PROVIDER = os.getenv(
@@ -33,7 +33,7 @@ web3 = Web3(Web3.HTTPProvider(WEB3_PROVIDER))
 nonce_cache: Dict[str, Dict[str, datetime]] = {}
 
 
-class TokenData(BaseModel):
+class TokenData(BaseModel): 
     """Token data model for JWT claims"""
     wallet_address: str
     exp: Optional[datetime] = None

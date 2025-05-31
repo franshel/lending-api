@@ -132,7 +132,7 @@ async def update_my_profile(
 
         # Extract profile data from update payload
         try:
-            profile_data = profile_update.dict(exclude_unset=True)
+            profile_data = profile_update.model_dump(exclude_unset=True)
         except ValidationError as ve:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -209,10 +209,10 @@ async def update_my_profile(
         # Ensure updated_at is set to the current timestamp
         update_parts.append("updated_at = :updated_at")
         # Handle the case where the profile does not exist
-        update_values["updated_at"] = datetime.utcnow()
+        update_values["updated_at"] = datetime.now(datetime.timezone.utc)
         if not profile_exists:
             # Set created_at for a new profile
-            update_values["created_at"] = datetime.utcnow()
+            update_values["created_at"] = datetime.now(datetime.timezone.utc)
 
             # Insert a new profile with all required fields
             columns = ["wallet_address", "profile_completed", "email_verified", "kyc_verified", "created_at"] + \
@@ -287,8 +287,8 @@ async def update_my_profile(
             "email_verified": updated_profile.email_verified,
             "kyc_verified": updated_profile.kyc_verified,
             # Always include created_at and updated_at as they're required by WalletProfileResponse
-            "created_at": updated_profile.created_at.isoformat() if updated_profile.created_at else datetime.utcnow().isoformat(),
-            "updated_at": updated_profile.updated_at.isoformat() if updated_profile.updated_at else datetime.utcnow().isoformat(),
+            "created_at": updated_profile.created_at.isoformat() if updated_profile.created_at else datetime.now(datetime.timezone.utc).isoformat(),
+            "updated_at": updated_profile.updated_at.isoformat() if updated_profile.updated_at else datetime.now(datetime.timezone.utc).isoformat(),
         }
 
         return result
